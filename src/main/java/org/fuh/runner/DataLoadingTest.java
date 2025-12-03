@@ -35,15 +35,14 @@ public class DataLoadingTest {
             // 2. VERIFICACIÓN DE CANCHAS
             // -------------------------------------------------
             printHeader("2. CONFIGURACIÓN DE CANCHAS");
-            Map<Integer, CourtConfig> courts = data.courtConfigs;
-            
+            Map<String, CourtConfig> courts = data.courtConfigs;            
             if (courts.isEmpty()) {
                 System.err.println("¡ALERTA! No se cargaron canchas.");
             } else {
-                for (CourtConfig c : courts.values()) {
-                    System.out.printf("- Cancha ID %d: %02d:00 a %02d:00 (Max Continuo: %d hs)%n",
-                            c.getId(), c.getStartHour(), c.getEndHour(), c.getMaxContinuousHours());
-                }
+            	for (CourtConfig c : courts.values()) {
+            	    // Usamos %s para el ID
+            	    System.out.printf("- Cancha %s: %02d:00 a %02d:00%n", c.getId(), c.getStartHour(), c.getEndHour());
+            	}
             }
 
             // -------------------------------------------------
