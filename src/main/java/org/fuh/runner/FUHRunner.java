@@ -78,11 +78,14 @@ public class FUHRunner {
  // <--- METODO NUEVO para generar datos de prueba
     private static List<MatchInfo> loadDummyInfo(int nMatches) {
         List<MatchInfo> list = new ArrayList<>();
-        // Generamos equipos rotativos: Club A, Club B, Club A, Club B...
         for (int i = 0; i < nMatches; i++) {
-            String institution = (i % 2 == 0) ? "Club A" : "Club B";
-            String category = "Juveniles";
-            list.add(new MatchInfo("P" + i, institution, category));
+            // Ejemplo: 
+            // Partido 0: Club A vs Club B
+            // Partido 1: Club C vs Club A (Aquí el Club A repite, debería haber continuidad)
+            String home = "Club_" + (i % 5);       // 5 Clubes rotativos
+            String away = "Club_" + ((i + 1) % 5); // El siguiente club
+            
+            list.add(new MatchInfo("P" + i, home, away, "Juveniles"));
         }
         return list;
     }

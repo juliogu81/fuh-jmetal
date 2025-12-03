@@ -60,29 +60,28 @@ public class FUHSchedulingProblem extends AbstractIntegerProblem {
     private double calculateInstitutionalGaps(Slot[] assignments) {
         double totalPenalty = 0.0;
 
-        // Comparamos cada partido contra todos los demás (O(N^2))
-        // Para optimizar en el futuro, se podría ordenar por cancha/hora primero.
         for (int i = 0; i < numberOfMatches; i++) {
             Slot slotA = assignments[i];
-            MatchInfo infoA = matchInfos.get(i); // Recuperamos quién juega el partido i
+            MatchInfo infoA = matchInfos.get(i);
 
             for (int j = i + 1; j < numberOfMatches; j++) {
                 Slot slotB = assignments[j];
-                MatchInfo infoB = matchInfos.get(j); // Recuperamos quién juega el partido j
+                MatchInfo infoB = matchInfos.get(j);
 
-                // 1. ¿Son de la misma institución? 
-                if (infoA.getInstitution().equals(infoB.getInstitution())) {
+                // CAMBIO CRÍTICO: Usamos el nuevo método sharesInstitutionWith
+                // Esto verifica las 4 combinaciones posibles (Local-Local, Local-Visitante, etc.)
+                if (infoA.sharesInstitutionWith(infoB)) {
                     
-                    // 2. ¿Están en la misma cancha? 
+                    // Si comparten equipo y cancha, verificamos el tiempo
                     if (slotA.getCourtId() == slotB.getCourtId()) {
                         
-                        // 3. Calcular distancia temporal
                         int diff = Math.abs(slotA.getTimeSlotId() - slotB.getTimeSlotId());
                         
-                        // Si son consecutivos (diferencia 1), es perfecto (hueco 0).
-                        // Si diferencia es > 1, hay un hueco.
-                        // Ejemplo: Juegan a las 10 y a las 12. Diff = 2. Hueco = 1 hora muerta.
+                        // Si hay un hueco mayor a 1 hora (no son consecutivos)
                         if (diff > 1) {
+                            // Sumamos penalización. 
+                            // Nota: Podríamos sumar penalización doble si AMBOS equipos repiten,
+                            // pero por ahora penalizamos el hueco simple.
                             totalPenalty += (diff - 1); 
                         }
                     }
