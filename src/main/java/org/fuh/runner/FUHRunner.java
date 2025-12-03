@@ -1,6 +1,7 @@
 package org.fuh.runner;
 
 import org.fuh.model.Slot;
+import org.fuh.model.MatchInfo;
 import org.fuh.problem.FUHSchedulingProblem;
 import org.uma.jmetal.algorithm.Algorithm;
 import org.uma.jmetal.algorithm.multiobjective.nsgaii.NSGAIIBuilder;
@@ -15,12 +16,13 @@ import java.util.List;
 public class FUHRunner {
 
     public static void main(String[] args) {
+    	int numMatches = 20;
         // 1. Datos de prueba (20 partidos simulados)
-        List<List<Slot>> data = loadDummyData(20);
+        List<List<Slot>> slotsData = loadDummyData(20);
 
+        List<MatchInfo> infoData = loadDummyInfo(numMatches);
         // 2. Definir el Problema
-        FUHSchedulingProblem problem = new FUHSchedulingProblem(data);
-
+        FUHSchedulingProblem problem = new FUHSchedulingProblem(slotsData, infoData);
         // 3. Definir Operadores
         double crossoverProb = 0.9;
         var crossover = new IntegerSBXCrossover(crossoverProb, 20.0);
@@ -70,6 +72,17 @@ public class FUHRunner {
             options.add(new Slot(2, 11)); // Cancha 2, 11:00
             options.add(new Slot(1, 12)); // Cancha 1, 12:00
             list.add(options);
+        }
+        return list;
+    }
+ // <--- METODO NUEVO para generar datos de prueba
+    private static List<MatchInfo> loadDummyInfo(int nMatches) {
+        List<MatchInfo> list = new ArrayList<>();
+        // Generamos equipos rotativos: Club A, Club B, Club A, Club B...
+        for (int i = 0; i < nMatches; i++) {
+            String institution = (i % 2 == 0) ? "Club A" : "Club B";
+            String category = "Juveniles";
+            list.add(new MatchInfo("P" + i, institution, category));
         }
         return list;
     }

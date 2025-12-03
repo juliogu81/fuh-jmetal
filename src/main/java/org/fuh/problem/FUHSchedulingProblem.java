@@ -1,6 +1,7 @@
 package org.fuh.problem;
 
-import org.fuh.model.Slot; // Asegúrate de que este import coincida con tu paquete
+import org.fuh.model.MatchInfo; // <--- IMPORTANTE
+import org.fuh.model.Slot;
 import org.uma.jmetal.problem.integerproblem.impl.AbstractIntegerProblem;
 import org.uma.jmetal.solution.integersolution.IntegerSolution;
 
@@ -10,52 +11,87 @@ import java.util.List;
 public class FUHSchedulingProblem extends AbstractIntegerProblem {
 
     private final List<List<Slot>> validSlotsPerMatch;
+    private final List<MatchInfo> matchInfos; // <--- CAMBIO 1: La lista de identidades
     private final int numberOfMatches;
 
-    public FUHSchedulingProblem(List<List<Slot>> validSlotsPerMatch) {
+    // <--- CAMBIO 2: Actualizar Constructor para recibir matchInfos
+    public FUHSchedulingProblem(List<List<Slot>> validSlotsPerMatch, List<MatchInfo> matchInfos) {
         this.validSlotsPerMatch = validSlotsPerMatch;
+        this.matchInfos = matchInfos; // Guardamos la referencia
         this.numberOfMatches = validSlotsPerMatch.size();
 
-        // 1. Configurar metadatos usando los nombres SIN "set"
-        this.numberOfObjectives(2); 
-        this.numberOfConstraints(1); 
+        this.numberOfObjectives(2);
+        this.numberOfConstraints(1);
         this.name("FUHScheduling");
 
-        // 2. Crear las listas de límites (Bounds)
         List<Integer> lowerLimit = new ArrayList<>();
         List<Integer> upperLimit = new ArrayList<>();
 
         for (List<Slot> slots : validSlotsPerMatch) {
-            lowerLimit.add(0); // El índice empieza en 0
-            upperLimit.add(slots.size() - 1); // El índice termina en tamaño - 1
+            lowerLimit.add(0);
+            upperLimit.add(slots.size() - 1);
         }
 
-        // 3. Establecer los límites
-        // Al llamar a esto, la clase padre calcula automáticamente numberOfVariables()
         this.variableBounds(lowerLimit, upperLimit);
     }
 
     @Override
     public IntegerSolution evaluate(IntegerSolution solution) {
-        // Decodificar la solución
         Slot[] assignments = decode(solution);
 
-        // --- Calcular Objetivos (Simulados según PDF) ---
-        // Objetivo 1: Minimizar huecos institucionales
-        solution.objectives()[0] = 0.0; 
-        
-        // Objetivo 2: Minimizar huecos por categoría
-        solution.objectives()[1] = 0.0; 
+        // --- CALCULO DE OBJETIVOS ---
 
-        // --- Calcular Restricciones ---
-        // Si hay superposición (overlaps > 0), penalizamos con un valor negativo
+        // Objetivo 1: Minimizar huecos de la misma institución (Continuidad Institucional)
+        //  "Minimizar los huecos de tiempo entre partidos consecutivos de una misma institución"
+        double gapsInstitucion = calculateInstitutionalGaps(assignments);
+        solution.objectives()[0] = gapsInstitucion;
+
+        // Objetivo 2: Continuidad por categoría (Simplificado por ahora)
+        solution.objectives()[1] = 0.0;
+
+        // Restricciones Duras: Superposiciones
         double overlaps = countOverlaps(assignments);
         solution.constraints()[0] = (overlaps == 0) ? 0.0 : -overlaps;
 
         return solution;
     }
 
-    // Método auxiliar para traducir indices (0, 1, 2...) a Slots reales (Cancha1-10am, etc)
+    // <--- CAMBIO 3: Lógica para calcular huecos usando MatchInfo
+    private double calculateInstitutionalGaps(Slot[] assignments) {
+        double totalPenalty = 0.0;
+
+        // Comparamos cada partido contra todos los demás (O(N^2))
+        // Para optimizar en el futuro, se podría ordenar por cancha/hora primero.
+        for (int i = 0; i < numberOfMatches; i++) {
+            Slot slotA = assignments[i];
+            MatchInfo infoA = matchInfos.get(i); // Recuperamos quién juega el partido i
+
+            for (int j = i + 1; j < numberOfMatches; j++) {
+                Slot slotB = assignments[j];
+                MatchInfo infoB = matchInfos.get(j); // Recuperamos quién juega el partido j
+
+                // 1. ¿Son de la misma institución? 
+                if (infoA.getInstitution().equals(infoB.getInstitution())) {
+                    
+                    // 2. ¿Están en la misma cancha? 
+                    if (slotA.getCourtId() == slotB.getCourtId()) {
+                        
+                        // 3. Calcular distancia temporal
+                        int diff = Math.abs(slotA.getTimeSlotId() - slotB.getTimeSlotId());
+                        
+                        // Si son consecutivos (diferencia 1), es perfecto (hueco 0).
+                        // Si diferencia es > 1, hay un hueco.
+                        // Ejemplo: Juegan a las 10 y a las 12. Diff = 2. Hueco = 1 hora muerta.
+                        if (diff > 1) {
+                            totalPenalty += (diff - 1); 
+                        }
+                    }
+                }
+            }
+        }
+        return totalPenalty;
+    }
+
     private Slot[] decode(IntegerSolution solution) {
         Slot[] assignments = new Slot[numberOfMatches];
         for (int i = 0; i < numberOfMatches; i++) {
@@ -65,12 +101,10 @@ public class FUHSchedulingProblem extends AbstractIntegerProblem {
         return assignments;
     }
 
-    // Método auxiliar simple para contar choques de horario
     private double countOverlaps(Slot[] assignments) {
         int overlaps = 0;
         for (int i = 0; i < assignments.length; i++) {
             for (int j = i + 1; j < assignments.length; j++) {
-                // Si dos partidos distintos tienen el mismo Slot (misma cancha y hora)
                 if (assignments[i].equals(assignments[j])) {
                     overlaps++;
                 }
