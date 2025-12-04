@@ -14,7 +14,7 @@ import java.util.Map;
 public class DataLoadingTest {
 
     // Asegúrate de que esta ruta apunte a tu archivo real
-    private static final String EXCEL_FILE_PATH = "/Users/juliogu/Documentos/git/ae-fixture/data/tests/input_001.xlsx"; 
+    private static final String EXCEL_FILE_PATH = "C:\\Facultad\\10mo semestre\\AE\\inputs\\input_001.xlsx"; 
 
     public static void main(String[] args) {
         System.out.println("==========================================");
