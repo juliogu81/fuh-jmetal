@@ -1,7 +1,7 @@
 package org.fuh.runner;
 
-import org.fuh.model.Slot;
-import org.fuh.model.MatchInfo;
+import org.fuh.model.*;
+import org.fuh.io.ExcelLoader;
 import org.fuh.problem.FUHSchedulingProblem;
 import org.uma.jmetal.algorithm.Algorithm;
 import org.uma.jmetal.algorithm.multiobjective.nsgaii.NSGAIIBuilder;
@@ -11,98 +11,190 @@ import org.uma.jmetal.solution.integersolution.IntegerSolution;
 
 import java.io.FileWriter;
 import java.io.PrintWriter;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.List;
+import java.util.*;
 
 public class FUHRunner {
 
     public static void main(String[] args) {
         // Configuración
-        int numMatches = 20;
         int populationSize = 100;
         double crossoverProb = 0.9;
         double mutationProb = 0.01;
         int maxEvaluations = 5000;
         
-        // 1. Cargar datos de prueba
-        List<List<Slot>> slotsData = loadDummyData(numMatches);
-        List<MatchInfo> infoData = loadDummyInfo(numMatches);
-        
-        // 2. Definir el Problema
-        FUHSchedulingProblem problem = new FUHSchedulingProblem(slotsData, infoData);
-        
-        // 3. Definir Operadores
-        var crossover = new IntegerSBXCrossover(crossoverProb, 20.0);
-        var mutation = new IntegerPolynomialMutation(mutationProb, 20.0);
-        
-        // 4. Construir el Algoritmo (NSGA-II)
-        Algorithm<List<IntegerSolution>> algorithm = 
-            new NSGAIIBuilder<>(problem, crossover, mutation, populationSize)
-                .setMaxEvaluations(maxEvaluations)
-                .build();
-        
-        // 5. Mostrar encabezado
-        System.out.println("╔══════════════════════════════════════════════╗");
-        System.out.println("║     NSGA-II - FUH Scheduling                ║");
-        System.out.println("╠══════════════════════════════════════════════╣");
-        System.out.println("║ Partidos: " + numMatches + "                                  ║");
-        System.out.println("║ Población: " + populationSize + "                                ║");
-        System.out.println("║ Evaluaciones: " + maxEvaluations + "                            ║");
-        System.out.println("╚══════════════════════════════════════════════╝\n");
-        
-        // 6. Ejecutar
-        System.out.println("Ejecutando algoritmo...");
-        long start = System.currentTimeMillis();
-        algorithm.run();
-        long end = System.currentTimeMillis();
-        
-        // 7. Obtener Resultado
-        List<IntegerSolution> result = algorithm.result(); 
-        
-        // 8. Ordenar por primer objetivo
-        result.sort(Comparator.comparingDouble(s -> s.objectives()[0]));
-        
-        // 9. Mostrar resultados detallados
-        displayResults(result, start, end);
-        
-        // 10. Guardar en archivos
-        saveResultsToFiles(result, "fuh_results");
-        
-        // 11. Mostrar frente de Pareto en consola
-        displayParetoConsole(result);
-    }
-    
-    // --- Generador de Datos Falsos ---
-    private static List<List<Slot>> loadDummyData(int nMatches) {
-        List<List<Slot>> list = new ArrayList<>();
-        for (int i = 0; i < nMatches; i++) {
-            List<Slot> options = new ArrayList<>();
-            // CORRECCIÓN: Slot ahora espera String para courtId
-            options.add(new Slot("1", 10)); // Cancha 1, 10:00
-            options.add(new Slot("2", 11)); // Cancha 2, 11:00
-            options.add(new Slot("1", 12)); // Cancha 1, 12:00
-            list.add(options);
+        try {
+            // OPCIÓN A: Cargar datos desde Excel (recomendado)
+            ExcelLoader.DataResult data = loadDataFromExcel("input_001.xlsx");
+            
+            // OPCIÓN B: Usar datos dummy (para prueba rápida)
+            // ExcelLoader.DataResult data = createDummyData();
+            
+            // Verificar que tenemos datos
+            if (data.matchInfos.isEmpty() || data.validSlots.isEmpty()) {
+                System.err.println("Error: No se cargaron datos. Verifica el archivo Excel.");
+                return;
+            }
+            
+            // 1. Cargar datos de prueba
+            List<List<Slot>> slotsData = data.validSlots;
+            List<MatchInfo> infoData = data.matchInfos;
+            Map<String, CourtConfig> courtConfigs = data.courtConfigs;
+            List<InstitutionPriority> priorities = data.priorities;
+            List<CategoryBlock> categoryBlocks = data.categoryBlocks;
+            
+            System.out.println("📊 Datos cargados:");
+            System.out.println("   • Partidos: " + data.matchInfos.size());
+            System.out.println("   • Canchas: " + data.courtConfigs.size());
+            System.out.println("   • Prioridades: " + data.priorities.size());
+            System.out.println("   • Bloques de categoría: " + data.categoryBlocks.size());
+            
+            // 2. Definir el Problema CON TODOS LOS PARÁMETROS
+            FUHSchedulingProblem problem = new FUHSchedulingProblem(
+                slotsData, 
+                infoData,
+                courtConfigs,
+                priorities,
+                categoryBlocks
+            );
+            
+            // 3. Definir Operadores
+            var crossover = new IntegerSBXCrossover(crossoverProb, 20.0);
+            var mutation = new IntegerPolynomialMutation(mutationProb, 20.0);
+            
+            // 4. Construir el Algoritmo (NSGA-II)
+            Algorithm<List<IntegerSolution>> algorithm = 
+                new NSGAIIBuilder<>(problem, crossover, mutation, populationSize)
+                    .setMaxEvaluations(maxEvaluations)
+                    .build();
+            
+            // 5. Mostrar encabezado
+            System.out.println("\n╔══════════════════════════════════════════════╗");
+            System.out.println("║     NSGA-II - FUH Scheduling                ║");
+            System.out.println("╠══════════════════════════════════════════════╣");
+            System.out.println("║ Partidos: " + data.matchInfos.size() + "                                ║");
+            System.out.println("║ Población: " + populationSize + "                                ║");
+            System.out.println("║ Evaluaciones: " + maxEvaluations + "                            ║");
+            System.out.println("╚══════════════════════════════════════════════╝\n");
+            
+            // 6. Ejecutar
+            System.out.println("Ejecutando algoritmo...");
+            long start = System.currentTimeMillis();
+            algorithm.run();
+            long end = System.currentTimeMillis();
+            
+            // 7. Obtener Resultado
+            List<IntegerSolution> result = algorithm.result(); 
+            
+            // 8. Ordenar por primer objetivo
+            result.sort(Comparator.comparingDouble(s -> s.objectives()[0]));
+            
+            // 9. Mostrar resultados detallados
+            displayResults(result, start, end);
+            
+            // 10. Guardar en archivos
+            saveResultsToFiles(result, "fuh_results");
+            
+            // 11. Mostrar frente de Pareto en consola
+            displayParetoConsole(result);
+            
+        } catch (Exception e) {
+            System.err.println("❌ Error durante la ejecución: " + e.getMessage());
+            e.printStackTrace();
+            System.out.println("\n⚠️  Usando datos de prueba como respaldo...");
+            runWithDummyData(); // Ejecutar con datos dummy si falla
         }
-        return list;
     }
     
-    // --- Método para generar datos de prueba ---
-    private static List<MatchInfo> loadDummyInfo(int nMatches) {
-        List<MatchInfo> list = new ArrayList<>();
-        // Generamos equipos rotativos
+    // --- Cargar datos desde Excel ---
+    private static ExcelLoader.DataResult loadDataFromExcel(String filePath) throws Exception {
+        ExcelLoader loader = new ExcelLoader();
+        return loader.loadFromExcel(filePath);
+    }
+    
+    // --- Crear datos dummy si no hay Excel ---
+    private static ExcelLoader.DataResult createDummyData() {
+        ExcelLoader.DataResult data = new ExcelLoader.DataResult();
+        
+        // 1. Configuración de canchas
+        data.courtConfigs.put("1", new CourtConfig("1", 8, 18, 4)); // Cancha 1: 8-18h, max 4h continuas
+        data.courtConfigs.put("2", new CourtConfig("2", 9, 17, 3)); // Cancha 2: 9-17h, max 3h continuas
+        data.courtConfigs.put("3", new CourtConfig("3", 10, 20, 5)); // Cancha 3: 10-20h, max 5h continuas
+        
+        // 2. Prioridades institucionales
+        data.priorities.add(new InstitutionPriority("Club A", "1", 0.3)); // Club A: 30% en cancha 1
+        data.priorities.add(new InstitutionPriority("Club B", "2", 0.2)); // Club B: 20% en cancha 2
+        
+        // 3. Bloques de categorías
+        data.categoryBlocks.add(new CategoryBlock("Juvenil", Arrays.asList("Juveniles", "Formativas")));
+        data.categoryBlocks.add(new CategoryBlock("Adulto", Arrays.asList("Mayores", "Veteranos")));
+        
+        // 4. Partidos y slots válidos (20 partidos)
         String[] instituciones = {"Club A", "Club B", "Club C", "Club D", "Club E"};
         String[] categorias = {"Juveniles", "Formativas", "Mayores"};
         
-        for (int i = 0; i < nMatches; i++) {
-            // CORRECCIÓN: MatchInfo necesita 4 parámetros (id, home, away, category)
+        for (int i = 0; i < 20; i++) {
+            // Info del partido
             String home = instituciones[i % instituciones.length];
             String away = instituciones[(i + 1) % instituciones.length];
             String category = categorias[i % categorias.length];
+            data.matchInfos.add(new MatchInfo("P" + i, home, away, category));
             
-            list.add(new MatchInfo("P" + i, home, away, category));
+            // Slots válidos para este partido
+            List<Slot> slots = new ArrayList<>();
+            
+            // Para cada cancha configurada
+            for (CourtConfig court : data.courtConfigs.values()) {
+                // Generar slots de 1 hora cada uno
+                for (int h = court.getStartHour(); h < court.getEndHour(); h++) {
+                    slots.add(new Slot(court.getId(), h));
+                }
+            }
+            data.validSlots.add(slots);
         }
-        return list;
+        
+        return data;
+    }
+    
+    // --- Ejecutar con datos dummy como respaldo ---
+    private static void runWithDummyData() {
+        try {
+            ExcelLoader.DataResult data = createDummyData();
+            
+            FUHSchedulingProblem problem = new FUHSchedulingProblem(
+                data.validSlots, 
+                data.matchInfos,
+                data.courtConfigs,
+                data.priorities,
+                data.categoryBlocks
+            );
+            
+            var crossover = new IntegerSBXCrossover(0.9, 20.0);
+            var mutation = new IntegerPolynomialMutation(0.01, 20.0);
+            
+            Algorithm<List<IntegerSolution>> algorithm = 
+                new NSGAIIBuilder<>(problem, crossover, mutation, 50) // Población más pequeña
+                    .setMaxEvaluations(1000) // Menos evaluaciones para prueba rápida
+                    .build();
+            
+            System.out.println("\n▶ Ejecutando con datos de prueba...");
+            algorithm.run();
+            List<IntegerSolution> result = algorithm.result();
+            
+            // Mostrar resultados básicos
+            if (!result.isEmpty()) {
+                System.out.println("\n✅ Prueba exitosa!");
+                System.out.println("Soluciones encontradas: " + result.size());
+                
+                IntegerSolution mejor = result.get(0);
+                System.out.println("Mejor solución:");
+                System.out.println("  • O1 (Inst.): " + String.format("%.2f", mejor.objectives()[0]));
+                System.out.println("  • O2 (Cat.): " + String.format("%.2f", mejor.objectives()[1]));
+                System.out.println("  • Restricción: " + String.format("%.2f", mejor.constraints()[0]));
+            }
+            
+        } catch (Exception e) {
+            System.err.println("Error incluso con datos dummy: " + e.getMessage());
+        }
     }
     
     // --- Mostrar resultados en consola ---
@@ -112,8 +204,8 @@ public class FUHRunner {
         System.out.println("\n══════════════════════════════════════════════");
         System.out.println("RESULTADOS");
         System.out.println("══════════════════════════════════════════════");
-        System.out.println("Tiempo de ejecución: " + executionTime + " ms");
-        System.out.println("Soluciones no dominadas: " + solutions.size());
+        System.out.println("⏱️  Tiempo de ejecución: " + executionTime + " ms");
+        System.out.println("📊 Soluciones no dominadas: " + solutions.size());
         
         if (solutions.isEmpty()) {
             System.out.println("No se encontraron soluciones válidas.");
@@ -150,7 +242,7 @@ public class FUHRunner {
             double maxO2 = solutions.stream().mapToDouble(s -> s.objectives()[1]).max().orElse(0);
             double avgO2 = solutions.stream().mapToDouble(s -> s.objectives()[1]).average().orElse(0);
             
-            System.out.println("\nESTADÍSTICAS:");
+            System.out.println("\n📈 ESTADÍSTICAS:");
             System.out.println("   O1 (Inst.): Min=" + String.format("%.2f", minO1) + 
                              ", Max=" + String.format("%.2f", maxO1) + 
                              ", Avg=" + String.format("%.2f", avgO1));
@@ -168,7 +260,7 @@ public class FUHRunner {
                 .orElse(null);
             
             if (bestO1 != null && bestO2 != null) {
-                System.out.println("\nMEJORES SOLUCIONES:");
+                System.out.println("\n🏆 MEJORES SOLUCIONES:");
                 System.out.println("   • Mejor O1: " + String.format("%.2f", bestO1.objectives()[0]) + 
                                  " (O2=" + String.format("%.2f", bestO1.objectives()[1]) + ")");
                 System.out.println("   • Mejor O2: " + String.format("%.2f", bestO2.objectives()[1]) + 
@@ -215,20 +307,23 @@ public class FUHRunner {
             }
             txtWriter.close();
             
-            System.out.println("\nArchivos guardados:");
+            System.out.println("\n💾 Archivos guardados:");
             System.out.println("   • " + baseName + ".csv (datos completos)");
             System.out.println("   • " + baseName + "_summary.txt (resumen)");
             
         } catch (Exception e) {
-            System.err.println("Error al guardar archivos: " + e.getMessage());
+            System.err.println("⚠️  Error al guardar archivos: " + e.getMessage());
         }
     }
     
     // --- Visualización simple del frente de Pareto en consola ---
     private static void displayParetoConsole(List<IntegerSolution> solutions) {
-        if (solutions.size() < 2) return;
+        if (solutions.size() < 2) {
+            System.out.println("\n⚠️  No hay suficientes soluciones para mostrar frente de Pareto");
+            return;
+        }
         
-        System.out.println("\nFRENTE DE PARETO (visualización simple):");
+        System.out.println("\n📊 FRENTE DE PARETO (visualización simple):");
         System.out.println("   O1 ↑");
         
         // Ordenar por O2 para visualización
@@ -305,8 +400,8 @@ public class FUHRunner {
         for (int j = 0; j < chartWidth - 10; j++) System.out.print(" ");
         System.out.println(String.format("%.1f", maxO1));
         
-        System.out.println("\nLeyenda:");
-        System.out.println("   = Solución no dominada");
+        System.out.println("\n📝 Leyenda:");
+        System.out.println("   ● = Solución no dominada");
         System.out.println("   O1 = Continuidad institucional (menor es mejor)");
         System.out.println("   O2 = Continuidad por categorías (menor es mejor)");
     }
