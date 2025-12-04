@@ -45,6 +45,19 @@ public class DataLoadingTest {
             	}
             }
 
+            
+            printHeader("2.5 EXCLUSIVIDADES DE CANCHA");
+            Map<String, String> exclusivity = data.exclusivityMap;
+
+            if (exclusivity.isEmpty()) {
+                System.out.println("(No se encontraron reglas de exclusividad)");
+            } else {
+                for (Map.Entry<String, String> entry : exclusivity.entrySet()) {
+                    String cancha = entry.getKey();
+                    String dueno = entry.getValue();
+                    System.out.printf("- Cancha %s es exclusiva de: %s%n", cancha, dueno);
+                }
+            }
             // -------------------------------------------------
             // 3. VERIFICACIÓN DE PRIORIDADES
             // -------------------------------------------------
@@ -55,8 +68,8 @@ public class DataLoadingTest {
                 System.out.println("(No se encontraron reglas de prioridad)");
             } else {
                 for (InstitutionPriority p : priorities) {
-                    System.out.printf("- %s -> Min %.0f%% en Cancha %d%n",
-                            p.getInstitution(), (p.getMinPercentage() * 100), p.getTargetCourtId());
+                	System.out.printf("- %s -> Min %.0f%% en Cancha %s%n",
+                	        p.getInstitution(), (p.getMinPercentage() * 100), p.getTargetCourtId());
                 }
             }
 
@@ -83,9 +96,9 @@ public class DataLoadingTest {
                 } else {
                     // Solo imprimimos detalle de algunos para verificar visualmente
                     if (i < 3) { 
-                        System.out.printf("Partido %s (%s): %d opciones (Ej: Cancha %d @ %d:00)%n",
-                            info.getId(), info.getCategory(), options.size(), 
-                            options.get(0).getCourtId(), options.get(0).getTimeSlotId());
+						System.out.printf("Partido %s (%s): %d opciones (Ej: Cancha %s @ %d:00)%n",
+						info.getId(), info.getCategory(), options.size(), 
+						options.get(0).getCourtId(), options.get(0).getTimeSlotId());
                     }
                 }
             }
