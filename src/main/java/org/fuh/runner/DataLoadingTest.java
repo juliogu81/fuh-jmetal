@@ -73,33 +73,35 @@ public class DataLoadingTest {
                 }
             }
 
-            // -------------------------------------------------
+         // -------------------------------------------------
             // 4. VERIFICACIÓN DE PARTIDOS Y SLOTS
             // -------------------------------------------------
-            printHeader("4. PARTIDOS Y ESPACIO DE BÚSQUEDA");
+            printHeader("4. LISTADO COMPLETO DE PARTIDOS");
             List<MatchInfo> matches = data.matchInfos;
             List<List<Slot>> allSlots = data.validSlots;
 
-            System.out.println("Total Partidos: " + matches.size());
+            System.out.println("Total Partidos Cargados: " + matches.size());
             int matchesWithNoSlots = 0;
 
-            // Mostramos solo los primeros 5 y los últimos 5 para no saturar la consola
-            // O si hay errores, los mostramos todos.
             for (int i = 0; i < matches.size(); i++) {
                 MatchInfo info = matches.get(i);
                 List<Slot> options = allSlots.get(i);
 
                 if (options.isEmpty()) {
-                    System.err.printf("[ERROR] Partido %s (%s vs %s) NO TIENE CANCHAS VÁLIDAS%n", 
-                        info.getId(), info.getHomeInstitution(), info.getAwayInstitution());
+                    System.err.printf("[ERROR] Partido %s (%s vs %s) - Cat: %s -> NO TIENE CANCHAS VÁLIDAS%n", 
+                        info.getId(), info.getHomeInstitution(), info.getAwayInstitution(), info.getCategory());
                     matchesWithNoSlots++;
                 } else {
-                    // Solo imprimimos detalle de algunos para verificar visualmente
-                    if (i < 3) { 
-						System.out.printf("Partido %s (%s): %d opciones (Ej: Cancha %s @ %d:00)%n",
-						info.getId(), info.getCategory(), options.size(), 
-						options.get(0).getCourtId(), options.get(0).getTimeSlotId());
-                    }
+                    // IMPRIMIMOS TODOS LOS PARTIDOS (Ya no hay límite i < 3)
+                    // Usamos %s para el nombre de la cancha en el ejemplo
+                    System.out.printf("P%s: %s vs %s (%s) -> %d opciones (Ej: %s @ %d:00)%n",
+                        info.getId(), 
+                        info.getHomeInstitution(), 
+                        info.getAwayInstitution(), 
+                        info.getCategory(),
+                        options.size(), 
+                        options.get(0).getCourtId(), 
+                        options.get(0).getTimeSlotId());
                 }
             }
             

@@ -1,28 +1,42 @@
 package org.fuh.problem;
 
-import org.fuh.model.MatchInfo; // <--- IMPORTANTE
-import org.fuh.model.Slot;
+import org.fuh.model.*;
 import org.uma.jmetal.problem.integerproblem.impl.AbstractIntegerProblem;
 import org.uma.jmetal.solution.integersolution.IntegerSolution;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 
 public class FUHSchedulingProblem extends AbstractIntegerProblem {
 
     private final List<List<Slot>> validSlotsPerMatch;
-    private final List<MatchInfo> matchInfos; // <--- CAMBIO 1: La lista de identidades
+    private final List<MatchInfo> matchInfos;
+    private final Map<String, CourtConfig> courtConfigs;
+    private final List<InstitutionPriority> priorities;
+    private final List<CategoryBlock> categoryBlocks;
     private final int numberOfMatches;
 
-    // <--- CAMBIO 2: Actualizar Constructor para recibir matchInfos
-    public FUHSchedulingProblem(List<List<Slot>> validSlotsPerMatch, List<MatchInfo> matchInfos) {
+    public FUHSchedulingProblem(
+            List<List<Slot>> validSlotsPerMatch, 
+            List<MatchInfo> matchInfos,
+            Map<String, CourtConfig> courtConfigs,
+            List<InstitutionPriority> priorities,
+            List<CategoryBlock> categoryBlocks) {
+
         this.validSlotsPerMatch = validSlotsPerMatch;
-        this.matchInfos = matchInfos; // Guardamos la referencia
+        this.matchInfos = matchInfos;
+        this.courtConfigs = courtConfigs;
+        this.priorities = priorities;
+        this.categoryBlocks = categoryBlocks;
         this.numberOfMatches = validSlotsPerMatch.size();
 
+        // 2 Objetivos: Continuidad Institucional (O1) y Continuidad Categoría (O2)
         this.numberOfObjectives(2);
-        this.numberOfConstraints(1);
-        this.name("FUHScheduling");
+        
+        // Número de restricciones = 1 (Superposición) + N Canchas (Max Horas) + N Reglas (Prioridad)
+        this.numberOfConstraints(1 + courtConfigs.size() + priorities.size());
 
         List<Integer> lowerLimit = new ArrayList<>();
         List<Integer> upperLimit = new ArrayList<>();
@@ -39,56 +53,31 @@ public class FUHSchedulingProblem extends AbstractIntegerProblem {
     public IntegerSolution evaluate(IntegerSolution solution) {
         Slot[] assignments = decode(solution);
 
-        // --- CALCULO DE OBJETIVOS ---
+        // --- OBJETIVOS (Blandas) ---
+        solution.objectives()[0] = calculateInstitutionalContinuity(assignments);
+        solution.objectives()[1] = calculateCategoryContinuity(assignments); // Implementación completa
+        
+        // --- RESTRICCIONES DURAS (Verificadas en ejecución) ---
+        
+        int constraintIndex = 0;
 
-        // Objetivo 1: Minimizar huecos de la misma institución (Continuidad Institucional)
-        //  "Minimizar los huecos de tiempo entre partidos consecutivos de una misma institución"
-        double gapsInstitucion = calculateInstitutionalGaps(assignments);
-        solution.objectives()[0] = gapsInstitucion;
-
-        // Objetivo 2: Continuidad por categoría (Simplificado por ahora)
-        solution.objectives()[1] = 0.0;
-
-        // Restricciones Duras: Superposiciones
+        // 1. Superposición (Overlap)
         double overlaps = countOverlaps(assignments);
-        solution.constraints()[0] = (overlaps == 0) ? 0.0 : -overlaps;
+        solution.constraints()[constraintIndex++] = (overlaps == 0) ? 0.0 : -overlaps; // Penalización
+
+        // 2. Máximo de Horas Continuas por Cancha
+        for (CourtConfig court : courtConfigs.values()) {
+            double violation = checkMaxContinuousHours(assignments, court);
+            solution.constraints()[constraintIndex++] = (violation == 0) ? 0.0 : -violation;
+        }
+
+        // 3. Cuotas de Prioridad Institucional (%)
+        for (InstitutionPriority rule : priorities) {
+            double violation = checkPriorityQuota(assignments, rule);
+            solution.constraints()[constraintIndex++] = (violation == 0) ? 0.0 : -violation;
+        }
 
         return solution;
-    }
-
-    // <--- CAMBIO 3: Lógica para calcular huecos usando MatchInfo
-    private double calculateInstitutionalGaps(Slot[] assignments) {
-        double totalPenalty = 0.0;
-
-        for (int i = 0; i < numberOfMatches; i++) {
-            Slot slotA = assignments[i];
-            MatchInfo infoA = matchInfos.get(i);
-
-            for (int j = i + 1; j < numberOfMatches; j++) {
-                Slot slotB = assignments[j];
-                MatchInfo infoB = matchInfos.get(j);
-
-                // CAMBIO CRÍTICO: Usamos el nuevo método sharesInstitutionWith
-                // Esto verifica las 4 combinaciones posibles (Local-Local, Local-Visitante, etc.)
-                if (infoA.sharesInstitutionWith(infoB)) {
-                    
-                    // Si comparten equipo y cancha, verificamos el tiempo
-                    if (slotA.getCourtId() == slotB.getCourtId()) {
-                        
-                        int diff = Math.abs(slotA.getTimeSlotId() - slotB.getTimeSlotId());
-                        
-                        // Si hay un hueco mayor a 1 hora (no son consecutivos)
-                        if (diff > 1) {
-                            // Sumamos penalización. 
-                            // Nota: Podríamos sumar penalización doble si AMBOS equipos repiten,
-                            // pero por ahora penalizamos el hueco simple.
-                            totalPenalty += (diff - 1); 
-                        }
-                    }
-                }
-            }
-        }
-        return totalPenalty;
     }
 
     private Slot[] decode(IntegerSolution solution) {
@@ -102,13 +91,162 @@ public class FUHSchedulingProblem extends AbstractIntegerProblem {
 
     private double countOverlaps(Slot[] assignments) {
         int overlaps = 0;
-        for (int i = 0; i < assignments.length; i++) {
-            for (int j = i + 1; j < assignments.length; j++) {
+        for (int i = 0; i < numberOfMatches; i++) {
+            for (int j = i + 1; j < numberOfMatches; j++) {
+                // Si dos partidos distintos tienen el mismo Slot (misma cancha y hora)
                 if (assignments[i].equals(assignments[j])) {
                     overlaps++;
                 }
             }
         }
         return overlaps;
+    }
+    
+    // =========================================================
+    // IMPLEMENTACIONES DE OBJETIVOS (Continuidad)
+    // =========================================================
+    
+    // O1: Continuidad Institucional (Minimizar huecos)
+    private double calculateInstitutionalContinuity(Slot[] assignments) {
+        double totalPenalty = 0.0;
+
+        for (int i = 0; i < numberOfMatches; i++) {
+            MatchInfo infoA = matchInfos.get(i);
+            Slot slotA = assignments[i];
+
+            for (int j = i + 1; j < numberOfMatches; j++) {
+                MatchInfo infoB = matchInfos.get(j);
+                Slot slotB = assignments[j];
+                
+                // Si comparten institución Y están en la misma cancha
+                if (infoA.sharesInstitutionWith(infoB) && slotA.getCourtId().equals(slotB.getCourtId())) {
+                    
+                    int diff = Math.abs(slotA.getTimeSlotId() - slotB.getTimeSlotId());
+                    
+                    if (diff > 1) {
+                        totalPenalty += (diff - 1); 
+                    }
+                }
+            }
+        }
+        return totalPenalty;
+    }
+    
+    // O2: Continuidad por Categorías (Bloques)
+    private double calculateCategoryContinuity(Slot[] assignments) {
+        double totalPenalty = 0.0;
+
+        for (int i = 0; i < numberOfMatches; i++) {
+            String catA = matchInfos.get(i).getCategory();
+            Slot slotA = assignments[i];
+
+            for (int j = i + 1; j < numberOfMatches; j++) {
+                String catB = matchInfos.get(j).getCategory();
+                Slot slotB = assignments[j];
+
+                // Solo si están en la MISMA cancha
+                if (slotA.getCourtId().equals(slotB.getCourtId())) {
+                    
+                    // Verificamos si pertenecen al mismo bloque de categorías (Objetivo 2)
+                    boolean sameBlock = isSameBlock(catA, catB);
+                    
+                    if (sameBlock) {
+                        int diff = Math.abs(slotA.getTimeSlotId() - slotB.getTimeSlotId());
+                        
+                        if (diff > 1) {
+                            totalPenalty += (diff - 1); // Penalización por hueco
+                        }
+                    }
+                }
+            }
+        }
+        return totalPenalty;
+    }
+    
+    // Helper para verificar si dos categorías son "compatibles" (están en el mismo bloque)
+    private boolean isSameBlock(String cat1, String cat2) {
+        // Si son la misma categoría exacta, cuenta como bloque implícito
+        if (cat1.equals(cat2)) return true;
+
+        // Buscar en los bloques definidos en el Excel
+        for (CategoryBlock block : categoryBlocks) {
+            if (block.match(cat1, cat2)) {
+                return true; 
+            }
+        }
+        return false;
+    }
+
+    // =========================================================
+    // IMPLEMENTACIONES DE RESTRICCIONES DURAS
+    // =========================================================
+
+    // R2: Verifica que no se exceda el máximo de horas continuas asignadas a una cancha
+    private double checkMaxContinuousHours(Slot[] assignments, CourtConfig court) {
+        // 1. Obtener todos los horarios asignados a ESTA cancha
+        List<Integer> times = new ArrayList<>();
+        for (Slot s : assignments) {
+            // Usamos .equals para String
+            if (s.getCourtId().equals(court.getId())) {
+                times.add(s.getTimeSlotId());
+            }
+        }
+        // No hay partidos o hay solo uno, no puede haber violación
+        if (times.size() <= 1) return 0.0; 
+        
+        Collections.sort(times); // Ordenar cronológicamente
+
+        // 2. Buscar la secuencia más larga
+        int currentStreak = 1;
+        int maxStreakFound = 1;
+
+        for (int i = 1; i < times.size(); i++) {
+            // Si el tiempo actual es el inmediatamente siguiente al anterior
+            if (times.get(i) == times.get(i - 1) + 1) { 
+                currentStreak++;
+            } else {
+                currentStreak = 1; // Reiniciar cuenta
+            }
+            maxStreakFound = Math.max(maxStreakFound, currentStreak);
+        }
+
+        // 3. Verificar límite
+        if (maxStreakFound > court.getMaxContinuousHours()) {
+            // Penalizamos el exceso de horas continuas
+            return (maxStreakFound - court.getMaxContinuousHours()); 
+        }
+        return 0.0;
+    }
+
+    // R3: Verifica que las instituciones cumplan su cuota mínima de partidos en una cancha objetivo
+    private double checkPriorityQuota(Slot[] assignments, InstitutionPriority rule) {
+        int totalMatchesOfInst = 0;
+        int matchesOnTargetCourt = 0;
+
+        for (int i = 0; i < numberOfMatches; i++) {
+            MatchInfo info = matchInfos.get(i);
+            
+            // ¿El partido involucra a la institución de la regla?
+            if (info.getHomeInstitution().equals(rule.getInstitution()) || info.getAwayInstitution().equals(rule.getInstitution())) {
+                totalMatchesOfInst++;
+                
+                // ¿Está en la cancha objetivo?
+                // Usamos .equals para String
+                if (assignments[i].getCourtId().equals(rule.getTargetCourtId())) {
+                    matchesOnTargetCourt++;
+                }
+            }
+        }
+
+        if (totalMatchesOfInst == 0) return 0.0; // No hay partidos que verificar
+
+        double actualPct = (double) matchesOnTargetCourt / totalMatchesOfInst;
+        
+        // Si no llega al porcentaje mínimo, penalizamos la diferencia.
+        if (actualPct < rule.getMinPercentage()) {
+            // Escalamos la penalización para que tenga peso (ej: 0.10 de violación = 10 puntos)
+            return (rule.getMinPercentage() - actualPct) * 100; 
+        }
+        return 0.0;
     }
 }
