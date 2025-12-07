@@ -19,6 +19,22 @@ public class ExcelLoader {
         public Map<String, String> exclusivityMap = new HashMap<>();
     }
 
+    private static class CourtRowData {
+        private final int start;
+        private final int end;
+        private final int maxHours;
+
+        public CourtRowData(int start, int end, int maxHours) {
+            this.start = start;
+            this.end = end;
+            this.maxHours = maxHours;
+        }
+
+        public int getStart() { return start; }
+        public int getEnd() { return end; }
+        public int getMaxHours() { return maxHours; }
+    }
+
     public DataResult loadFromExcel(String filePath) throws IOException {
         DataResult result = new DataResult();
 
@@ -35,24 +51,41 @@ public class ExcelLoader {
         // A(0): Cancha | B(1): Dia (IGNORAR) | C(2): Inicio | D(3): Fin | E(4): Max
         Sheet sheetCourts = workbook.getSheet("canchas-disponibilidad");
         if (sheetCourts != null) {
+            // Mapa temporal para agrupar por cancha
+            Map<String, List<CourtRowData>> courtDataMap = new HashMap<>();
+            
             for (Row row : sheetCourts) {
                 if (row.getRowNum() == 0) continue; // Saltar cabecera
 
                 String id = getStringValue(row, 0); // Col 0: Nombre Cancha
 
-                // Col 1 es el DIA, lo saltamos según tu instrucción
-
                 int start = getHourFromCell(row, 1); // Col 2: Inicio (Lee formato hh:mm)
                 int end = getHourFromCell(row, 2);   // Col 3: Fin (Lee formato hh:mm)
                 int maxHours = (int) getNumericValue(row, 3); // Col 4: Horas Max
 
-                // Validación: Si el nombre existe y el horario tiene sentido
                 if (!id.isEmpty() && end > start) {
-                    // Si ya existe la cancha (ej: mismo nombre otro día), la sobreescribimos o ignoramos.
-                    // Nota: Tu modelo actual CourtConfig no soporta "Días", asume que todos los días es igual.
-                    // Si hay filas duplicadas (Sabado/Domingo), se quedará con la última leída.
-                    result.courtConfigs.put(id, new CourtConfig(id, start, end, maxHours));
+                    courtDataMap.putIfAbsent(id, new ArrayList<>());
+                    courtDataMap.get(id).add(new CourtRowData(start, end, maxHours));
                 }
+            }
+
+            // Procesar cada cancha: tomar el mínimo inicio, el máximo fin, y el mínimo de horas máximas
+            for (Map.Entry<String, List<CourtRowData>> entry : courtDataMap.entrySet()) {
+                String id = entry.getKey();
+                List<CourtRowData> dataList = entry.getValue();
+                
+                int minStart = dataList.stream().mapToInt(CourtRowData::getStart).min().getAsInt();
+                int maxEnd = dataList.stream().mapToInt(CourtRowData::getEnd).max().getAsInt();
+                
+                // Si hay horas máximas especificadas, tomar el mínimo (el límite más restrictivo)
+                // Si no hay, usar un valor por defecto (por ejemplo, 24)
+                int maxHours = dataList.stream()
+                        .mapToInt(CourtRowData::getMaxHours)
+                        .filter(h -> h > 0) // Ignorar los que son 0 o negativos
+                        .min()
+                        .orElse(24); // Valor por defecto
+
+                result.courtConfigs.put(id, new CourtConfig(id, minStart, maxEnd, maxHours));
             }
         }
 

@@ -8,6 +8,8 @@ import org.uma.jmetal.algorithm.multiobjective.nsgaii.NSGAIIBuilder;
 import org.uma.jmetal.operator.crossover.impl.IntegerSBXCrossover;
 import org.uma.jmetal.operator.mutation.impl.IntegerPolynomialMutation;
 import org.uma.jmetal.solution.integersolution.IntegerSolution;
+import org.fuh.operator.FUHCrossover;
+import org.fuh.operator.FUHMutation;
 
 import java.io.FileWriter;
 import java.io.PrintWriter;
@@ -18,14 +20,14 @@ public class FUHRunner {
 
     public static void main(String[] args) {
         // Configuración
-        int populationSize = 100;
+        int populationSize = 500;
         double crossoverProb = 0.9;
         double mutationProb = 0.01;
-        int maxEvaluations = 5000;
+        int maxEvaluations = 200000;
         
         try {
             // OPCIÓN A: Cargar datos desde Excel
-            ExcelLoader.DataResult data = loadDataFromExcel("input_v5_2xlsx.xlsx");
+            ExcelLoader.DataResult data = loadDataFromExcel("input_v5_4xlsx.xlsx");
             
             // OPCIÓN B: Usar datos dummy (para prueba rápida)
             // ExcelLoader.DataResult data = createDummyData();
@@ -46,14 +48,25 @@ public class FUHRunner {
             System.out.println("   • Partidos: " + data.matchInfos.size());
             System.out.println("   • Canchas: " + data.courtConfigs.size());
             
+            // Verificar que cada partido tenga al menos un slot válido
+            for (int i = 0; i < slotsData.size(); i++) {
+                if (slotsData.get(i).isEmpty()) {
+                    System.err.println("ERROR: Partido " + i + " no tiene slots válidos!");
+                    System.err.println("  - Institución Local: " + infoData.get(i).getHomeInstitution());
+                    System.err.println("  - Institución Visitante: " + infoData.get(i).getAwayInstitution());
+                    System.err.println("  - Categoría: " + infoData.get(i).getCategory());
+                    return;
+                }
+            }
+            
             // 2. Definir el Problema
             FUHSchedulingProblem problem = new FUHSchedulingProblem(
                 slotsData, infoData, courtConfigs, priorities, categoryBlocks
             );
             
-            // 3. Definir Operadores
-            var crossover = new IntegerSBXCrossover(crossoverProb, 20.0);
-            var mutation = new IntegerPolynomialMutation(mutationProb, 20.0);
+         // 3. Definir Operadores PERSONALIZADOS (según tu proyecto)
+            var crossover = new FUHCrossover(crossoverProb, slotsData);
+            var mutation = new FUHMutation(mutationProb, slotsData);
             
             // 4. Construir el Algoritmo
             Algorithm<List<IntegerSolution>> algorithm = 
@@ -392,49 +405,7 @@ public class FUHRunner {
             data.validSlots.add(slots);
         }
         
-        return new ExcelLoader.DataResult();
-    }
-    
-    // --- Ejecutar con datos dummy como respaldo ---
-    private static void runWithDummyData() {
-        try {
-            ExcelLoader.DataResult data = createDummyData();
-            
-            FUHSchedulingProblem problem = new FUHSchedulingProblem(
-                data.validSlots, 
-                data.matchInfos,
-                data.courtConfigs,
-                data.priorities,
-                data.categoryBlocks
-            );
-            
-            var crossover = new IntegerSBXCrossover(0.9, 20.0);
-            var mutation = new IntegerPolynomialMutation(0.01, 20.0);
-            
-            Algorithm<List<IntegerSolution>> algorithm = 
-                new NSGAIIBuilder<>(problem, crossover, mutation, 50) // Población más pequeña
-                    .setMaxEvaluations(1000) // Menos evaluaciones para prueba rápida
-                    .build();
-            
-            System.out.println("\n▶ Ejecutando con datos de prueba...");
-            algorithm.run();
-            List<IntegerSolution> result = algorithm.result();
-            
-            // Mostrar resultados básicos
-            if (!result.isEmpty()) {
-                System.out.println("\n✅ Prueba exitosa!");
-                System.out.println("Soluciones encontradas: " + result.size());
-                
-                IntegerSolution mejor = result.get(0);
-                System.out.println("Mejor solución:");
-                System.out.println("  • O1 (Inst.): " + String.format("%.2f", mejor.objectives()[0]));
-                System.out.println("  • O2 (Cat.): " + String.format("%.2f", mejor.objectives()[1]));
-                System.out.println("  • Restricción: " + String.format("%.2f", mejor.constraints()[0]));
-            }
-            
-        } catch (Exception e) {
-            System.err.println("Error incluso con datos dummy: " + e.getMessage());
-        }
+        return data;
     }
     
     // --- Mostrar resultados en consola ---

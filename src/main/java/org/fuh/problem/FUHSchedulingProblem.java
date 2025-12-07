@@ -53,12 +53,7 @@ public class FUHSchedulingProblem extends AbstractIntegerProblem {
     public IntegerSolution evaluate(IntegerSolution solution) {
         Slot[] assignments = decode(solution);
 
-        // --- OBJETIVOS (Blandas) ---
-        solution.objectives()[0] = calculateInstitutionalContinuity(assignments);
-        solution.objectives()[1] = calculateCategoryContinuity(assignments); // Implementación completa
-        
-        // --- RESTRICCIONES DURAS (Verificadas en ejecución) ---
-        
+        // --- RESTRICCIONES DURAS ---
         int constraintIndex = 0;
 
         // 1. Superposición (Overlap)
@@ -66,17 +61,40 @@ public class FUHSchedulingProblem extends AbstractIntegerProblem {
         solution.constraints()[constraintIndex++] = (overlaps == 0) ? 0.0 : -overlaps; // Penalización
 
         // 2. Máximo de Horas Continuas por Cancha
+        double maxHoursViolation = 0.0;
         for (CourtConfig court : courtConfigs.values()) {
             double violation = checkMaxContinuousHours(assignments, court);
+            maxHoursViolation += violation;
             solution.constraints()[constraintIndex++] = (violation == 0) ? 0.0 : -violation;
         }
 
         // 3. Cuotas de Prioridad Institucional (%)
+        double priorityViolation = 0.0;
         for (InstitutionPriority rule : priorities) {
             double violation = checkPriorityQuota(assignments, rule);
+            priorityViolation += violation;
             solution.constraints()[constraintIndex++] = (violation == 0) ? 0.0 : -violation;
         }
 
+        // --- OBJETIVOS (Blandas) ---
+        double o1 = calculateInstitutionalContinuity(assignments);
+        double o2 = calculateCategoryContinuity(assignments);
+        
+        // Penalización grande por violaciones de restricciones duras
+        double hardPenalty = 0.0;
+        if (overlaps > 0) {
+            hardPenalty += 10000.0 * overlaps;
+        }
+        if (maxHoursViolation > 0) {
+            hardPenalty += 10000.0 * maxHoursViolation;
+        }
+        if (priorityViolation > 0) {
+            hardPenalty += 10000.0 * priorityViolation;
+        }
+
+        solution.objectives()[0] = o1 + hardPenalty;
+        solution.objectives()[1] = o2 + hardPenalty;
+        
         return solution;
     }
 
