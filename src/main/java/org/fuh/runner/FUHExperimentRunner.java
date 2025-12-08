@@ -2,55 +2,57 @@ package org.fuh.runner;
 
 import org.fuh.io.ExcelLoader;
 import org.fuh.problem.FUHSchedulingProblem;
-import org.fuh.runner.FUHRunner.ExperimentResult;
+import org.fuh.runner.FUHRunner.ExperimentResult; // Importamos la clase interna
 import org.uma.jmetal.solution.integersolution.IntegerSolution;
 
 import java.io.FileWriter;
 import java.io.IOException;
 import java.text.SimpleDateFormat;
 import java.util.Date;
-import java.util.List;
 
 public class FUHExperimentRunner {
 
     // --- Configuración Global del Experimento ---
-    // NOTA: Se recomienda cambiar REPETITIONS a 50 para la calibración final.
-    private static final int REPETITIONS = 1; 
+    private static final int REPETITIONS = 1; // Cambiar a 30 o 50 para el paper final
     private static final String PROBLEM_NAME = "HandballFixture"; 
+    // Asegúrate de que este nombre sea correcto:
     private static final String EXCEL_FILE_PATH = "input_v5_4xlsx.xlsx"; 
 
-    // --- Hiperparámetros a Testear (54 combinaciones) ---
-    private static final int[] POPULATION_SIZES = {100, 150, 200};
-    private static final double[] CROSSOVER_PROBS = {1.0, 0.9, 0.6};
-    private static final double[] MUTATION_PROBS = {0.1, 0.01, 0.05}; 
-    private static final int[] GENERATIONS = {500, 1000}; 
+    // --- Hiperparámetros a Testear ---
+    private static final int[] POPULATION_SIZES = {100, 150};
+    private static final double[] CROSSOVER_PROBS = {1.0, 0.95, 0.9};
+    private static final double[] MUTATION_PROBS = {0.02, 0.015, 0.01}; 
+    private static final int[] GENERATIONS = {1000, 1500}; 
 
     public static void main(String[] args) {
         
         System.out.println("╔══════════════════════════════════════════════╗");
         System.out.println("║     INICIANDO CALIBRACIÓN PARAMÉTRICA        ║");
         System.out.println("╚══════════════════════════════════════════════╝");
+        
+        int totalRuns = POPULATION_SIZES.length * CROSSOVER_PROBS.length * MUTATION_PROBS.length * GENERATIONS.length * REPETITIONS;
         System.out.printf("Problema: %s\n", PROBLEM_NAME);
-        System.out.printf("Total de Corridas: %d\n", POPULATION_SIZES.length * CROSSOVER_PROBS.length * MUTATION_PROBS.length * GENERATIONS.length * REPETITIONS);
+        System.out.printf("Total de Corridas estimadas: %d\n", totalRuns);
         System.out.println("------------------------------------------------");
         
-        // 1. Cargar la instancia del problema una sola vez
+        // 1. Cargar los datos UNA sola vez (son de solo lectura)
         ExcelLoader.DataResult data = loadDataFromExcel(EXCEL_FILE_PATH); 
-        FUHSchedulingProblem problem = new FUHSchedulingProblem(
-            data.validSlots, 
-            data.matchInfos, 
-            data.courtConfigs, 
-            data.priorities, 
-            data.categoryBlocks
-        );
+        
+        if (data == null || data.matchInfos.isEmpty()) {
+            System.err.println("❌ ERROR: No hay datos para procesar. Abortando.");
+            return;
+        }
 
+        // Preparar archivo de salida
         String timestamp = new SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date());
-        String resultsFile = "calibration_results_" + PROBLEM_NAME + "_" + timestamp + ".csv";
+        String resultsFile = "calibration_results_" + timestamp + ".csv";
         initializeResultsFile(resultsFile);
         
         int configId = 0;
+        int currentRunIndex = 0;
+        long startTimeTotal = System.currentTimeMillis();
         
-        // 2. Bucles anidados para iterar sobre las 54 configuraciones
+        // 2. Bucles anidados (Grid Search)
         for (int populationSize : POPULATION_SIZES) {
             for (double crossoverProb : CROSSOVER_PROBS) {
                 for (double mutationProb : MUTATION_PROBS) {
@@ -60,18 +62,27 @@ public class FUHExperimentRunner {
                         String configLabel = String.format("C%02d", configId);
                         int maxEvaluations = populationSize * generations; 
 
-                        System.out.printf("  Corriendo %s: P=%d, Pc=%.1f, Pm=%.3f, G=%d -> Evals: %d\n", 
-                                          configLabel, populationSize, crossoverProb, mutationProb, generations, maxEvaluations);
+                        System.out.printf("[%d/%d] Config %s: Pop=%d, Pc=%.2f, Pm=%.3f, Gen=%d ... ", 
+                                          (configId), (totalRuns/REPETITIONS), configLabel, populationSize, crossoverProb, mutationProb, generations);
                         
-                        // 3. Bucle para las 50 repeticiones
+                        // 3. Repeticiones
                         for (int rep = 1; rep <= REPETITIONS; rep++) {
-                            System.out.print(".");
+                            currentRunIndex++;
                             
-                            // *** LÓGICA DE LA SEMILLA: GENERACIÓN DE VALOR ÚNICO ***
-                            long seed = (long) configId * 100 + rep; 
+                            // Semilla única y reproducible para cada repetición de cada config
+                            long seed = (long) configId * 1000 + rep; 
                             
                             try {
-                                // LLAMADA CORREGIDA: Se incluye la semilla
+                                // A. Instanciamos el problema NUEVO para cada corrida (limpieza total)
+                                FUHSchedulingProblem problem = new FUHSchedulingProblem(
+                                    data.validSlots, 
+                                    data.matchInfos, 
+                                    data.courtConfigs, 
+                                    data.priorities, 
+                                    data.categoryBlocks
+                                );
+
+                                // B. Ejecutamos usando el MISMO método que tu runner principal
                                 ExperimentResult result = FUHRunner.runSingleNSGAII(
                                     problem,
                                     data.validSlots,
@@ -79,25 +90,31 @@ public class FUHExperimentRunner {
                                     crossoverProb,
                                     mutationProb,
                                     maxEvaluations,
-                                    seed // <--- ¡Semilla pasada al ejecutor!
+                                    seed 
                                 );
                                 
-                                // LLAMADA CORREGIDA: Se incluye la semilla
+                                // C. Guardamos resultados
                                 saveRawData(resultsFile, PROBLEM_NAME, configId, rep, populationSize, 
                                             crossoverProb, mutationProb, generations, seed, result);
                                 
                             } catch (Exception e) {
                                 System.err.printf("\n    ❌ Error en %s, Rep %d: %s\n", configLabel, rep, e.getMessage());
+                                e.printStackTrace();
                             }
                         }
-                        System.out.println(" (Completado)"); 
+                        System.out.println("✅"); 
                     }
                 }
             }
         }
+        
+        long endTimeTotal = System.currentTimeMillis();
+        long durationTotal = (endTimeTotal - startTimeTotal) / 1000;
+        
         System.out.println("\n╔══════════════════════════════════════════════╗");
         System.out.println("║ EXPERIMENTACIÓN FINALIZADA                   ║");
-        System.out.printf("║ Resultados guardados en: %s\n", resultsFile);
+        System.out.printf("║ Tiempo Total: %d segundos                    ║\n", durationTotal);
+        System.out.printf("║ Resultados: %s           ║\n", resultsFile);
         System.out.println("╚══════════════════════════════════════════════╝");
     }
     
@@ -107,64 +124,60 @@ public class FUHExperimentRunner {
     
     private static ExcelLoader.DataResult loadDataFromExcel(String filePath) {
         try {
+            // Reutilizamos el método estático de tu Runner
             return FUHRunner.loadDataFromExcel(filePath); 
         } catch (Exception e) {
-            System.err.println("❌ FATAL: No se pudieron cargar datos desde " + filePath);
-            e.printStackTrace();
-            System.exit(1);
+            System.err.println("❌ FATAL: Excepción al cargar Excel: " + e.getMessage());
             return null;
         }
     }
 
-	// Y actualizar el encabezado en initializeResultsFile:
-	private static void initializeResultsFile(String fileName) {
-	    try (FileWriter writer = new FileWriter(fileName, false)) {
-	        // AÑADIR LA COLUMNA SolutionID
-	        writer.write("RunID,ConfigID,Repetition,Problema,PopSize,CrossoverProb,MutationProb,Generations,TiempoMs,Seed,SolutionID,Objetivo,Valor\n");
-	    } catch (IOException e) {
-	        e.printStackTrace();
-	    }
-	}
+    private static void initializeResultsFile(String fileName) {
+        try (FileWriter writer = new FileWriter(fileName, false)) {
+            writer.write("RunID,ConfigID,Repetition,Problema,PopSize,CrossoverProb,MutationProb,Generations,TiempoMs,Seed,SolutionID,Objetivo,Valor\n");
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
 
-    /**
-     * Guarda el tiempo de ejecución y cada punto (O1, O2) del Frente de Pareto en el archivo CSV.
-     */
     private static void saveRawData(
-    	    String fileName,
-    	    String problemName,
-    	    int configId, 
-    	    int rep, 
-    	    int popSize, 
-    	    double crossoverProb, 
-    	    double mutationProb, 
-    	    int generations, 
-    	    long seed, 
-    	    ExperimentResult result) {
-    	    
-    	    String runId = String.format("C%02d_R%02d", configId, rep);
-    	    
-    	    try (FileWriter writer = new FileWriter(fileName, true)) {
-    	        long executionTimeMs = result.executionTimeMs;
-    	        
-    	        // --- AÑADIR UN CONTADOR DE SOLUCIÓN DENTRO DE LA CORRIDA ---
-    	        int solutionId = 0; 
+            String fileName,
+            String problemName,
+            int configId, 
+            int rep, 
+            int popSize, 
+            double crossoverProb, 
+            double mutationProb, 
+            int generations, 
+            long seed, 
+            ExperimentResult result) {
+            
+            String runId = String.format("C%02d_R%02d", configId, rep);
+            
+            try (FileWriter writer = new FileWriter(fileName, true)) {
+                long executionTimeMs = result.executionTimeMs;
+                int solutionId = 0; 
 
-    	        for (IntegerSolution sol : result.solutions) {
-    	            solutionId++; // Incrementar el ID para cada solución no dominada
-    	            
-    	            // Escritura de O1 (Continuidad Institucional)
-    	            writer.write(String.format("%s,%d,%d,%s,%d,%.3f,%.3f,%d,%d,%d,%d,O1,%.6f\n",
-    	                runId, configId, rep, problemName, popSize, crossoverProb, mutationProb, 
-    	                generations, executionTimeMs, seed, solutionId, sol.objectives()[0])); // <-- solutionId agregada
-    	            
-    	            // Escritura de O2 (Continuidad por Categoría)
-    	            writer.write(String.format("%s,%d,%d,%s,%d,%.3f,%.3f,%d,%d,%d,%d,O2,%.6f\n",
-    	                runId, configId, rep, problemName, popSize, crossoverProb, mutationProb, 
-    	                generations, executionTimeMs, seed, solutionId, sol.objectives()[1])); // <-- solutionId agregada
-    	        }
-    	    } catch (IOException e) {
-    	        System.err.println("Error al escribir datos crudos para " + runId + ": " + e.getMessage());
-    	    }
+                for (IntegerSolution sol : result.solutions) {
+                    solutionId++; 
+                    
+                    // O1
+                    writer.write(String.format("%s,%d,%d,%s,%d,%.3f,%.3f,%d,%d,%d,%d,O1,%.6f\n",
+                        runId, configId, rep, problemName, popSize, crossoverProb, mutationProb, 
+                        generations, executionTimeMs, seed, solutionId, sol.objectives()[0]));
+                    
+                    // O2
+                    writer.write(String.format("%s,%d,%d,%s,%d,%.3f,%.3f,%d,%d,%d,%d,O2,%.6f\n",
+                        runId, configId, rep, problemName, popSize, crossoverProb, mutationProb, 
+                        generations, executionTimeMs, seed, solutionId, sol.objectives()[1]));
+                    
+                    // Restricción (Opcional, pero muy útil para filtrar luego)
+                    writer.write(String.format("%s,%d,%d,%s,%d,%.3f,%.3f,%d,%d,%d,%d,Restriccion,%.6f\n",
+                        runId, configId, rep, problemName, popSize, crossoverProb, mutationProb, 
+                        generations, executionTimeMs, seed, solutionId, sol.constraints()[0]));
+                }
+            } catch (IOException e) {
+                System.err.println("Error escritura CSV: " + e.getMessage());
+            }
     }
-    }
-
+}

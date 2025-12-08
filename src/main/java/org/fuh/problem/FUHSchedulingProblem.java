@@ -83,13 +83,13 @@ public class FUHSchedulingProblem extends AbstractIntegerProblem {
         // Penalización grande por violaciones de restricciones duras
         double hardPenalty = 0.0;
         if (overlaps > 0) {
-            hardPenalty += 10000.0 * overlaps;
+            hardPenalty += 1000.0 * overlaps;
         }
         if (maxHoursViolation > 0) {
-            hardPenalty += 10000.0 * maxHoursViolation;
+            hardPenalty += 1000.0 * maxHoursViolation;
         }
         if (priorityViolation > 0) {
-            hardPenalty += 10000.0 * priorityViolation;
+            hardPenalty += 1000.0 * priorityViolation;
         }
 
         solution.objectives()[0] = o1 + hardPenalty;
