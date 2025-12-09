@@ -142,7 +142,7 @@ public class FUHRunner {
             
             // Guardar resultados
             if (!result.isEmpty()) {
-                IntegerSolution mejorSolucion = result.get(0); // La mejor en O1
+                IntegerSolution mejorSolucion = result.get(0);
                 saveResultsToFiles(result, "fuh_results");
                 saveFixtureToCSV(problem, mejorSolucion, data, "fuh_fixture");
                 analyzeAndDisplayFixture(problem, mejorSolucion, data);

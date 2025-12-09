@@ -17,6 +17,7 @@ public class ExcelLoader {
         public List<InstitutionPriority> priorities = new ArrayList<>();
         public List<CategoryBlock> categoryBlocks = new ArrayList<>();
         public Map<String, String> exclusivityMap = new HashMap<>();
+        public Set<String> allInstitutions = new HashSet<>(); // Conjunto maestro de instituciones
     }
 
     private static class CourtRowData {
@@ -153,7 +154,23 @@ public class ExcelLoader {
                 }
             }
         }
-
+        
+        
+        Sheet sheetInst = workbook.getSheet("instituciones"); 
+        if (sheetInst != null) {
+            for (Row row : sheetInst) {
+                if (row.getRowNum() == 0) continue; // Saltar cabecera
+                
+                String instName = getStringValue(row, 0); // Asumiendo que la columna 0 contiene el nombre
+                
+                if (!instName.isEmpty()) {
+                    // Normalizar a mayúsculas y quitar espacios para evitar errores de integridad
+                    result.allInstitutions.add(instName.toUpperCase().trim()); 
+                }
+            }
+        } else {
+            System.err.println("ADVERTENCIA: No se encontró la hoja 'instituciones'. La lista maestra estará incompleta.");
+        }
         // =========================================================
         // FASE 2: CARGAR PARTIDOS Y GENERAR SLOTS
         // =========================================================
