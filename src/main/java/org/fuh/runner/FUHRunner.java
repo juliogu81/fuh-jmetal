@@ -91,28 +91,37 @@ public class FUHRunner {
         // Configuración GANADORA basada en tus experimentos previos
         int populationSize = 100;
         double crossoverProb = 0.95;
-        double mutationProb = 0.015;
+        double mutationProb = 0.1;
         int maxEvaluations = 200000;
         long testSeed = 12345L; 
         
         try {
             // Cargar datos
-            ExcelLoader.DataResult data = loadDataFromExcel("input_v5_4xlsx.xlsx");
+            ExcelLoader.DataResult data = loadDataFromExcel("/Users/juliogu/Documentos/git/ae-fixture/data/entrada/06_8-9_ae.xlsx");
             
             if (data.matchInfos.isEmpty()) {
                 System.err.println("Error: No se cargaron datos.");
                 return;
             }
 
-            // Diagnóstico de espacio
-            int totalUniqueSlots = 0;
-            for (List<Slot> slots : data.validSlots) {
-                totalUniqueSlots += slots.size();
+         // --- CORRECCIÓN: Diagnóstico de espacio real ---
+            Set<String> uniquePhysicalSlots = new HashSet<>();
+            
+            // Recorremos todas las opciones de todos los partidos
+            for (List<Slot> matchOptions : data.validSlots) {
+                for (Slot s : matchOptions) {
+                    // Creamos una clave única: Cancha + Hora
+                    String uniqueKey = s.getCourtId() + "_" + s.getTimeSlotId();
+                    uniquePhysicalSlots.add(uniqueKey);
+                }
             }
+            
+            int totalPhysicalCapacity = uniquePhysicalSlots.size();
+            // ------------------------------------------------
             System.out.println("📊 Datos cargados:");
             System.out.println("   • Partidos: " + data.matchInfos.size());
             System.out.println("   • Canchas: " + data.courtConfigs.size());
-            System.out.println("   • Total Slots Posibles: " + totalUniqueSlots);
+            System.out.println("   • Total Slots Posibles: " + totalPhysicalCapacity);
             
             // Definir Problema
             FUHSchedulingProblem problem = new FUHSchedulingProblem(

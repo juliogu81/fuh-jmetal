@@ -13,15 +13,15 @@ import java.util.Date;
 public class FUHExperimentRunner {
 
     // --- Configuración Global del Experimento ---
-    private static final int REPETITIONS = 1; // Cambiar a 30 o 50 para el paper final
+    private static final int REPETITIONS = 50; // Cambiar a 30 o 50 para el paper final
     private static final String PROBLEM_NAME = "HandballFixture"; 
     // Asegúrate de que este nombre sea correcto:
-    private static final String EXCEL_FILE_PATH = "input_v5_4xlsx.xlsx"; 
+    private static final String EXCEL_FILE_PATH = "06_8-9_ae.xlsx"; 
 
     // --- Hiperparámetros a Testear ---
-    private static final int[] POPULATION_SIZES = {100, 150};
-    private static final double[] CROSSOVER_PROBS = {1.0, 0.95, 0.9};
-    private static final double[] MUTATION_PROBS = {0.02, 0.015, 0.01}; 
+    private static final int[] POPULATION_SIZES = {100, 150, 200};
+    private static final double[] CROSSOVER_PROBS = {1.0, 0.6, 0.9};
+    private static final double[] MUTATION_PROBS = {0.01, 0.05, 0.001}; 
     private static final int[] GENERATIONS = {1000, 1500}; 
 
     public static void main(String[] args) {
