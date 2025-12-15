@@ -8,6 +8,8 @@ import org.uma.jmetal.algorithm.multiobjective.nsgaii.NSGAIIBuilder;
 import org.uma.jmetal.solution.integersolution.IntegerSolution;
 import org.fuh.operator.FUHCrossover;
 import org.fuh.operator.FUHMutation;
+// 🔥 1. IMPORTAMOS LA INTERFAZ QUE EXIGE EL BUILDER
+import org.uma.jmetal.util.comparator.dominanceComparator.DominanceComparator;
 
 import java.io.FileWriter;
 import java.io.PrintWriter;
@@ -17,7 +19,7 @@ import java.util.*;
 public class FUHRunner {
 
     // =========================================================
-    // CLASE AUXILIAR PARA RESULTADOS
+    // 1. CLASES AUXILIARES (Resultados y Reportes)
     // =========================================================
     public static class ExperimentResult {
         public final List<IntegerSolution> solutions;
@@ -29,27 +31,95 @@ public class FUHRunner {
         }
     }
     
-    // =========================================================
-    // CLASE AUXILIAR PARA ORDENAR EL REPORTE CSV
-    // =========================================================
     private static class FixtureRow {
         MatchInfo info;
         Slot slot;
-        int superposiciones;
-        double contInst;
-        double contCat;
-
-        public FixtureRow(MatchInfo info, Slot slot, int superposiciones, double contInst, double contCat) {
+        public FixtureRow(MatchInfo info, Slot slot) {
             this.info = info;
             this.slot = slot;
-            this.superposiciones = superposiciones;
-            this.contInst = contInst;
-            this.contCat = contCat;
         }
     }
 
     // =========================================================
-    // MÉTODO DE EJECUCIÓN SINGLE (con Semilla)
+    // 2. COMPARADOR MANUAL (CORREGIDO DE TIPO)
+    // =========================================================
+    /**
+     * 🔥 CORRECCIÓN CLAVE:
+     * Ahora implementamos 'DominanceComparator<IntegerSolution>' en lugar de solo 'Comparator'.
+     * Esto satisface el requisito estricto del NSGAIIBuilder.
+     */
+ // =========================================================
+    // COMPARADOR CON DEBUG (Reemplaza la clase anterior)
+    // =========================================================
+    public static class ManualComparator implements DominanceComparator<IntegerSolution> {
+        
+        // Un contador estático para no saturar la consola (imprimimos solo las primeras 50 batallas interesantes)
+        private static int debugCounter = 0; 
+        
+        @Override
+        public int compare(IntegerSolution s1, IntegerSolution s2) {
+            double v1 = sumViolations(s1);
+            double v2 = sumViolations(s2);
+
+            // LOGICA DE DEBUG: Queremos ver cuando una Válida mata a una Inválida
+            boolean interestingCase = (v1 == 0 && v2 < 0) || (v1 < 0 && v2 == 0);
+            
+            if (interestingCase && debugCounter < 20) {
+                debugCounter++;
+                System.out.println("\n⚔️ --- BATALLA DE SOLUCIONES ---");
+                System.out.printf("   🥊 S1: [Restr: %.1f | O1: %.1f | O2: %.1f]\n", v1, s1.objectives()[0], s1.objectives()[1]);
+                System.out.printf("   🥊 S2: [Restr: %.1f | O1: %.1f | O2: %.1f]\n", v2, s2.objectives()[0], s2.objectives()[1]);
+            }
+
+            // Regla A: Válido vs Inválido
+            if (v1 == 0 && v2 < 0) {
+                if(interestingCase && debugCounter <= 20) System.out.println("   🏆 GANA S1 (Por ser Válida)");
+                return -1; 
+            }
+            if (v1 < 0 && v2 == 0) {
+                if(interestingCase && debugCounter <= 20) System.out.println("   🏆 GANA S2 (Por ser Válida)");
+                return 1;
+            }
+
+            // Regla B: Inválido vs Inválido
+            if (v1 < 0 && v2 < 0) {
+                if (v1 > v2) return -1;
+                if (v2 > v1) return 1;
+                return 0;
+            }
+
+            // Regla C: Válido vs Válido (Pareto)
+            int result = compareObjectives(s1, s2);
+            if (v1 == 0 && v2 == 0 && result != 0 && debugCounter < 20) {
+                 // Si ambas son validas y una gana a la otra
+                 System.out.println("   ⚖️ Ambas Válidas -> Gana " + (result == -1 ? "S1" : "S2") + " por Objetivos");
+                 debugCounter++; 
+            }
+            return result;
+        }
+
+        private double sumViolations(IntegerSolution s) {
+            double total = 0.0;
+            for (double v : s.constraints()) if (v < 0) total += v;
+            return total;
+        }
+
+        private int compareObjectives(IntegerSolution s1, IntegerSolution s2) {
+            int dom1 = 0; int dom2 = 0;
+            for (int i = 0; i < s1.objectives().length; i++) {
+                double val1 = s1.objectives()[i];
+                double val2 = s2.objectives()[i];
+                if (val1 < val2) dom1 = 1;
+                else if (val2 < val1) dom2 = 1;
+            }
+            if (dom1 == 1 && dom2 == 0) return -1;
+            if (dom2 == 1 && dom1 == 0) return 1;
+            return 0;
+        }
+    }
+
+    // =========================================================
+    // 3. MÉTODO DE EJECUCIÓN (NSGA-II)
     // =========================================================
     public static ExperimentResult runSingleNSGAII(
             FUHSchedulingProblem problem,
@@ -60,39 +130,38 @@ public class FUHRunner {
             int maxEvaluations,
             long seed) throws Exception {
             
-            // Establecer la semilla de jMetal globalmente
+            // Semilla para reproducibilidad
             org.uma.jmetal.util.pseudorandom.JMetalRandom.getInstance().setSeed(seed);
             
-            // 1. Definir Operadores
+            // Definir Operadores
             var crossover = new FUHCrossover(crossoverProb, slotsData);
             var mutation = new FUHMutation(mutationProb, slotsData);
             
-            // 2. Construir el Algoritmo
+            // Construir el Algoritmo con el COMPARADOR MANUAL
             Algorithm<List<IntegerSolution>> algorithm = 
                     new NSGAIIBuilder<>(problem, crossover, mutation, populationSize)
                         .setMaxEvaluations(maxEvaluations)
+                        // 🔥 AHORA SÍ: El tipo coincide exactamente con lo que pide el Builder
+                        .setDominanceComparator(new ManualComparator())
                         .build();
             
-            // 3. Ejecutar y medir tiempo
+            // Ejecutar y medir tiempo
             long start = System.currentTimeMillis();
             algorithm.run();
             long end = System.currentTimeMillis();
             
-            List<IntegerSolution> result = algorithm.result();
-            
-            // 4. Devolver resultados
-            return new ExperimentResult(result, end - start);
+            return new ExperimentResult(algorithm.result(), end - start);
     }
     
     // =========================================================
-    // MÉTODO MAIN
+    // 4. MÉTODO MAIN
     // =========================================================
     public static void main(String[] args) {
-        // Configuración GANADORA basada en tus experimentos previos
+        // Configuración Recomendada
         int populationSize = 100;
         double crossoverProb = 0.95;
         double mutationProb = 0.1;
-        int maxEvaluations = 200000;
+        int maxEvaluations = 50000; // 50k es un buen número para empezar
         long testSeed = 12345L; 
         
         try {
@@ -104,33 +173,28 @@ public class FUHRunner {
                 return;
             }
 
-         // --- CORRECCIÓN: Diagnóstico de espacio real ---
+            // Diagnóstico de espacio real
             Set<String> uniquePhysicalSlots = new HashSet<>();
-            
-            // Recorremos todas las opciones de todos los partidos
             for (List<Slot> matchOptions : data.validSlots) {
                 for (Slot s : matchOptions) {
-                    // Creamos una clave única: Cancha + Hora
                     String uniqueKey = s.getCourtId() + "_" + s.getTimeSlotId();
                     uniquePhysicalSlots.add(uniqueKey);
                 }
             }
-            
             int totalPhysicalCapacity = uniquePhysicalSlots.size();
-            // ------------------------------------------------
+
             System.out.println("📊 Datos cargados:");
             System.out.println("   • Partidos: " + data.matchInfos.size());
             System.out.println("   • Canchas: " + data.courtConfigs.size());
-            System.out.println("   • Total Slots Posibles: " + totalPhysicalCapacity);
+            System.out.println("   • Capacidad Real (Slots): " + totalPhysicalCapacity);
             
             // Definir Problema
             FUHSchedulingProblem problem = new FUHSchedulingProblem(
                 data.validSlots, data.matchInfos, data.courtConfigs, data.priorities, data.categoryBlocks
             );
             
-            // Ejecutar
             System.out.println("\n╔══════════════════════════════════════════════╗");
-            System.out.println("║     NSGA-II - FUH Scheduling (Single Run)   ║");
+            System.out.println("║   NSGA-II - FUH Scheduling (Modo Manual)    ║");
             System.out.println("╚══════════════════════════════════════════════╝");
             System.out.println("▶ Ejecutando algoritmo...");
             
@@ -142,14 +206,10 @@ public class FUHRunner {
             // Ordenar por Objetivo 1 para mejor visualización
             result.sort(Comparator.comparingDouble(s -> s.objectives()[0]));
 
-            long executionTime = resultWrapper.executionTimeMs;
-            long startTime = System.currentTimeMillis() - executionTime;
-            long endTime = System.currentTimeMillis();
-            
             // Mostrar resultados en consola
-            displayResults(result, startTime, endTime);
+            displayResults(result, 0, resultWrapper.executionTimeMs);
             
-            // Guardar resultados
+            // Guardar resultados si hay algo válido
             if (!result.isEmpty()) {
                 IntegerSolution mejorSolucion = result.get(0);
                 saveResultsToFiles(result, "fuh_results");
@@ -157,36 +217,29 @@ public class FUHRunner {
                 analyzeAndDisplayFixture(problem, mejorSolucion, data);
             }
             
-            displayParetoConsole(result);
-            
         } catch (Exception e) {
-            System.err.println("❌ Error: " + e.getMessage());
+            System.err.println("❌ Error Crítico: " + e.getMessage());
             e.printStackTrace();
         }
     }
 
     // =========================================================
-    // MÉTODOS DE VISUALIZACIÓN Y REPORTE (RESTAURADOS)
+    // 5. MÉTODOS DE VISUALIZACIÓN Y REPORTE
     // =========================================================
 
     private static void displayResults(List<IntegerSolution> solutions, long startTime, long endTime) {
-        long executionTime = endTime - startTime;
-        
         System.out.println("\n══════════════════════════════════════════════");
-        System.out.println("RESULTADOS");
+        System.out.println("RESULTADOS (" + solutions.size() + " soluciones)");
         System.out.println("══════════════════════════════════════════════");
-        System.out.println("⏱️  Tiempo de ejecución: " + executionTime + " ms");
-        System.out.println("📊 Soluciones no dominadas: " + solutions.size());
+        System.out.println("⏱️  Tiempo: " + endTime + " ms");
         
         if (solutions.isEmpty()) {
-            System.out.println("No se encontraron soluciones válidas.");
+            System.out.println("⚠️ No se encontraron soluciones.");
             return;
         }
         
-        // Tabla de soluciones
         System.out.println("\n" + "─".repeat(65));
-        System.out.printf("│ %-8s │ %-20s │ %-20s │ %-10s │%n", 
-            "ID", "Objetivo 1 (O1)", "Objetivo 2 (O2)", "Restricción");
+        System.out.printf("│ %-8s │ %-20s │ %-20s │ %-10s │%n", "ID", "Objetivo 1", "Objetivo 2", "Restr");
         System.out.println("─".repeat(65));
         
         for (int i = 0; i < Math.min(15, solutions.size()); i++) {
@@ -194,23 +247,7 @@ public class FUHRunner {
             System.out.printf("│ %-8d │ %-20.4f │ %-20.4f │ %-10.2f │%n", 
                 i + 1, sol.objectives()[0], sol.objectives()[1], sol.constraints()[0]);
         }
-        
-        if (solutions.size() > 15) {
-            System.out.println("│ " + "..." + " ".repeat(57) + "│");
-        }
         System.out.println("─".repeat(65));
-
-        // Mejores Soluciones
-        if (solutions.size() > 0) {
-            IntegerSolution bestO1 = solutions.stream().min(Comparator.comparingDouble(s -> s.objectives()[0])).orElse(null);
-            IntegerSolution bestO2 = solutions.stream().min(Comparator.comparingDouble(s -> s.objectives()[1])).orElse(null);
-            
-            System.out.println("\n🏆 MEJORES SOLUCIONES:");
-            System.out.println("   • Mejor O1: " + String.format("%.2f", bestO1.objectives()[0]) + 
-                             " (O2=" + String.format("%.2f", bestO1.objectives()[1]) + ")");
-            System.out.println("   • Mejor O2: " + String.format("%.2f", bestO2.objectives()[1]) + 
-                             " (O1=" + String.format("%.2f", bestO2.objectives()[0]) + ")");
-        }
     }
 
     private static void saveResultsToFiles(List<IntegerSolution> solutions, String baseName) {
@@ -224,17 +261,9 @@ public class FUHRunner {
                     i + 1, sol.objectives()[0], sol.objectives()[1], sol.constraints()[0]));
             }
             csvWriter.close();
-            
-            PrintWriter txtWriter = new PrintWriter(baseName + "_summary.txt");
-            txtWriter.println("RESUMEN EJECUCIÓN - FUH SCHEDULING");
-            txtWriter.println("Soluciones encontradas: " + solutions.size());
-            txtWriter.close();
-            
-            System.out.println("\n💾 Archivos guardados:");
-            System.out.println("   • " + baseName + ".csv");
-            System.out.println("   • " + baseName + "_summary.txt");
+            System.out.println("💾 Resultados guardados en: " + baseName + ".csv");
         } catch (Exception e) {
-            System.err.println("⚠️  Error al guardar archivos: " + e.getMessage());
+            System.err.println("⚠️ Error guardando CSV: " + e.getMessage());
         }
     }
 
@@ -246,42 +275,33 @@ public class FUHRunner {
         String fileName = baseName + "_" + timestamp + ".csv";
         FileWriter writer = new FileWriter(fileName);
         
-        writer.write("Cancha,Hora,ID Partido,Local,Visitante,Categoria,Dia,Superposiciones,ContInst,ContCat\n");
+        writer.write("Cancha,Hora,ID Partido,Local,Visitante,Categoria\n");
         
         Slot[] assignments = decodeSolution(solution, data.validSlots);
-        
-        // Calcular métricas para el reporte
-        Map<String, Integer> ocupacion = new HashMap<>();
-        // ... (Tu lógica de métricas simplificada aquí si es necesario, o la completa)
-        // Para brevedad uso una versión directa:
-        
         List<FixtureRow> rows = new ArrayList<>();
+        
         for(int i=0; i<assignments.length; i++){
             Slot s = assignments[i];
             MatchInfo m = data.matchInfos.get(i);
-            rows.add(new FixtureRow(m, s, 0, 0.0, 0.0)); // Placeholders si no quieres recalcular todo ahora
+            rows.add(new FixtureRow(m, s));
         }
         
+        // Ordenar por Cancha y Hora
         rows.sort(Comparator.comparing((FixtureRow r) -> r.slot.getCourtId())
                   .thenComparingInt(r -> r.slot.getTimeSlotId()));
 
         for (FixtureRow row : rows) {
-            writer.write(String.format("%s,%d:00,%s,%s,%s,%s,%s,%d,%.2f,%.2f\n",
+            writer.write(String.format("%s,%d:00,%s,%s,%s,%s\n",
                 row.slot.getCourtId(), row.slot.getTimeSlotId(), row.info.getId(),
-                row.info.getHomeInstitution(), row.info.getAwayInstitution(), row.info.getCategory(),
-                "Sábado", 0, 0.0, 0.0));
+                row.info.getHomeInstitution(), row.info.getAwayInstitution(), row.info.getCategory()));
         }
         writer.close();
-        System.out.println("💾 FIXTURE guardado en: " + fileName);
+        System.out.println("💾 Fixture detallado guardado en: " + fileName);
     }
 
     private static void analyzeAndDisplayFixture(FUHSchedulingProblem problem,
                                                  IntegerSolution solution,
                                                  ExcelLoader.DataResult data) {
-        System.out.println("\n" + "═".repeat(60));
-        System.out.println("📋 ANÁLISIS DEL FIXTURE GENERADO (Mejor O1)");
-        System.out.println("═".repeat(60));
-        
         Slot[] assignments = decodeSolution(solution, data.validSlots);
         
         // Verificar superposiciones
@@ -294,33 +314,20 @@ public class FUHRunner {
             ocupacion.get(clave).add(i);
         }
         
-        System.out.println("\n⚠️  VERIFICACIÓN DE SUPERPOSICIONES:");
+        System.out.println("\n🔍 ANÁLISIS DE FACTIBILIDAD:");
         for (Map.Entry<String, List<Integer>> entry : ocupacion.entrySet()) {
             if (entry.getValue().size() > 1) {
                 superposiciones += entry.getValue().size() - 1;
-                System.out.printf("   • %s: %d partidos (IDs: %s)\n", entry.getKey(), entry.getValue().size(), entry.getValue());
+                System.out.printf("   ❌ CHOQUE en %s: %d partidos (IDs: %s)\n", entry.getKey(), entry.getValue().size(), entry.getValue());
             }
         }
         
-        if (superposiciones == 0) System.out.println("   ✅ No hay superposiciones");
+        if (superposiciones == 0) System.out.println("   ✅ ¡FIXTURE VÁLIDO! (0 Superposiciones)");
         else System.out.printf("   ❌ Total superposiciones: %d\n", superposiciones);
-        
-        System.out.println("\n🎯 RESUMEN DE OBJETIVOS:");
-        System.out.printf("   • O1: %.2f\n", solution.objectives()[0]);
-        System.out.printf("   • O2: %.2f\n", solution.objectives()[1]);
-        System.out.printf("   • Restricción: %.2f\n", solution.constraints()[0]);
-    }
-
-    private static void displayParetoConsole(List<IntegerSolution> solutions) {
-        if (solutions.size() < 2) return;
-        System.out.println("\n📊 FRENTE DE PARETO (Consola):");
-        System.out.println("   O1 ↑");
-        // ... (Tu lógica de dibujo ASCII si la quieres mantener, es opcional) ...
-        System.out.println("   (Visualización omitida, ver CSV para datos crudos)");
     }
 
     // =========================================================
-    // UTILIDADES
+    // 6. UTILIDADES
     // =========================================================
     public static ExcelLoader.DataResult loadDataFromExcel(String filePath) throws Exception {
         ExcelLoader loader = new ExcelLoader();
