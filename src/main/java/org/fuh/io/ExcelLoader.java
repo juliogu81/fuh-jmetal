@@ -270,7 +270,7 @@ public class ExcelLoader {
         return 0;
     }
 
-    private String getStringValue(Row row, int index) {
+    public String getStringValue(Row row, int index) {
         Cell cell = row.getCell(index);
         if (cell == null) return "";
         try {

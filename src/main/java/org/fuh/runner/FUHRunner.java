@@ -8,8 +8,8 @@ import org.uma.jmetal.algorithm.multiobjective.nsgaii.NSGAIIBuilder;
 import org.uma.jmetal.solution.integersolution.IntegerSolution;
 import org.fuh.operator.FUHCrossover;
 import org.fuh.operator.FUHMutation;
-// 🔥 1. IMPORTAMOS LA INTERFAZ QUE EXIGE EL BUILDER
 import org.uma.jmetal.util.comparator.dominanceComparator.DominanceComparator;
+import org.fuh.io.FixtureSeeder; // Importar el Seeder
 
 import java.io.FileWriter;
 import java.io.PrintWriter;
@@ -19,12 +19,11 @@ import java.util.*;
 public class FUHRunner {
 
     // =========================================================
-    // 1. CLASES AUXILIARES (Resultados y Reportes)
+    // 1. CLASES AUXILIARES 
     // =========================================================
     public static class ExperimentResult {
         public final List<IntegerSolution> solutions;
         public final long executionTimeMs;
-        
         public ExperimentResult(List<IntegerSolution> solutions, long executionTimeMs) {
             this.solutions = solutions;
             this.executionTimeMs = executionTimeMs;
@@ -41,19 +40,9 @@ public class FUHRunner {
     }
 
     // =========================================================
-    // 2. COMPARADOR MANUAL (CORREGIDO DE TIPO)
-    // =========================================================
-    /**
-     * 🔥 CORRECCIÓN CLAVE:
-     * Ahora implementamos 'DominanceComparator<IntegerSolution>' en lugar de solo 'Comparator'.
-     * Esto satisface el requisito estricto del NSGAIIBuilder.
-     */
- // =========================================================
-    // COMPARADOR CON DEBUG (Reemplaza la clase anterior)
+    // 2. COMPARADOR MANUAL (GARANTIZA CUMPLIMIENTO DE RESTRICCIONES)
     // =========================================================
     public static class ManualComparator implements DominanceComparator<IntegerSolution> {
-        
-        // Un contador estático para no saturar la consola (imprimimos solo las primeras 50 batallas interesantes)
         private static int debugCounter = 0; 
         
         @Override
@@ -61,9 +50,9 @@ public class FUHRunner {
             double v1 = sumViolations(s1);
             double v2 = sumViolations(s2);
 
-            // LOGICA DE DEBUG: Queremos ver cuando una Válida mata a una Inválida
             boolean interestingCase = (v1 == 0 && v2 < 0) || (v1 < 0 && v2 == 0);
             
+            // Log de debug limitado a 20 líneas para no saturar
             if (interestingCase && debugCounter < 20) {
                 debugCounter++;
                 System.out.println("\n⚔️ --- BATALLA DE SOLUCIONES ---");
@@ -72,16 +61,10 @@ public class FUHRunner {
             }
 
             // Regla A: Válido vs Inválido
-            if (v1 == 0 && v2 < 0) {
-                if(interestingCase && debugCounter <= 20) System.out.println("   🏆 GANA S1 (Por ser Válida)");
-                return -1; 
-            }
-            if (v1 < 0 && v2 == 0) {
-                if(interestingCase && debugCounter <= 20) System.out.println("   🏆 GANA S2 (Por ser Válida)");
-                return 1;
-            }
-
-            // Regla B: Inválido vs Inválido
+            if (v1 == 0 && v2 < 0) return -1; // S1 Gana
+            if (v1 < 0 && v2 == 0) return 1;  // S2 Gana
+            
+            // Regla B: Inválido vs Inválido (Gana el menos malo)
             if (v1 < 0 && v2 < 0) {
                 if (v1 > v2) return -1;
                 if (v2 > v1) return 1;
@@ -91,7 +74,6 @@ public class FUHRunner {
             // Regla C: Válido vs Válido (Pareto)
             int result = compareObjectives(s1, s2);
             if (v1 == 0 && v2 == 0 && result != 0 && debugCounter < 20) {
-                 // Si ambas son validas y una gana a la otra
                  System.out.println("   ⚖️ Ambas Válidas -> Gana " + (result == -1 ? "S1" : "S2") + " por Objetivos");
                  debugCounter++; 
             }
@@ -130,22 +112,17 @@ public class FUHRunner {
             int maxEvaluations,
             long seed) throws Exception {
             
-            // Semilla para reproducibilidad
             org.uma.jmetal.util.pseudorandom.JMetalRandom.getInstance().setSeed(seed);
             
-            // Definir Operadores
             var crossover = new FUHCrossover(crossoverProb, slotsData);
             var mutation = new FUHMutation(mutationProb, slotsData);
             
-            // Construir el Algoritmo con el COMPARADOR MANUAL
             Algorithm<List<IntegerSolution>> algorithm = 
                     new NSGAIIBuilder<>(problem, crossover, mutation, populationSize)
                         .setMaxEvaluations(maxEvaluations)
-                        // 🔥 AHORA SÍ: El tipo coincide exactamente con lo que pide el Builder
                         .setDominanceComparator(new ManualComparator())
                         .build();
             
-            // Ejecutar y medir tiempo
             long start = System.currentTimeMillis();
             algorithm.run();
             long end = System.currentTimeMillis();
@@ -157,44 +134,45 @@ public class FUHRunner {
     // 4. MÉTODO MAIN
     // =========================================================
     public static void main(String[] args) {
-        // Configuración Recomendada
+        // --- CONFIGURACIÓN PARA BUSCAR PARETO ---
         int populationSize = 100;
-        double crossoverProb = 0.95;
-        double mutationProb = 0.1;
-        int maxEvaluations = 50000; // 50k es un buen número para empezar
+        double crossoverProb = 0.95; 
+        double mutationProb = 0.1; // Alto para forzar exploración
+        int maxEvaluations = 200000;
         long testSeed = 12345L; 
         
         try {
-            // Cargar datos
-            ExcelLoader.DataResult data = loadDataFromExcel("/Users/juliogu/Documentos/git/ae-fixture/data/entrada/06_8-9_ae.xlsx");
-            
-            if (data.matchInfos.isEmpty()) {
-                System.err.println("Error: No se cargaron datos.");
-                return;
-            }
+            // 🔥 AJUSTA ESTAS RUTAS 🔥
+            String excelPath = "/Users/juliogu/Documentos/git/ae-fixture/data/entrada/06_8-9_ae.xlsx";
+            String seedPath = "/Users/juliogu/Documentos/git/ae-fixture/data/salida/output_2025-12-14_21-56.xlsx";
 
-            // Diagnóstico de espacio real
-            Set<String> uniquePhysicalSlots = new HashSet<>();
-            for (List<Slot> matchOptions : data.validSlots) {
-                for (Slot s : matchOptions) {
-                    String uniqueKey = s.getCourtId() + "_" + s.getTimeSlotId();
-                    uniquePhysicalSlots.add(uniqueKey);
-                }
-            }
-            int totalPhysicalCapacity = uniquePhysicalSlots.size();
-
-            System.out.println("📊 Datos cargados:");
-            System.out.println("   • Partidos: " + data.matchInfos.size());
-            System.out.println("   • Canchas: " + data.courtConfigs.size());
-            System.out.println("   • Capacidad Real (Slots): " + totalPhysicalCapacity);
+            // 1. Cargar datos
+            ExcelLoader.DataResult data = loadDataFromExcel(excelPath);
             
-            // Definir Problema
+            // 2. Definir Problema
             FUHSchedulingProblem problem = new FUHSchedulingProblem(
                 data.validSlots, data.matchInfos, data.courtConfigs, data.priorities, data.categoryBlocks
             );
             
+            // 3. CARGA E INYECCIÓN DE SEMILLA (con chequeo de Null)
+            IntegerSolution seed = FixtureSeeder.createSolutionFromExcel(
+                    seedPath, 
+                    problem, 
+                    data.matchInfos, 
+                    data.validSlots
+                );
+            
+            // 🔥 Corregido: Si la semilla existe, la inyectamos
+            if(seed != null) {
+                problem.setSeedSolution(seed);
+                System.out.println("✅ Semilla inyectada como primer individuo.");
+            } else {
+                // Si falla la carga, el createSolution() del Problem usará el Smart Random.
+                System.err.println("❌ La semilla falló la carga. Se usará inicialización aleatoria inteligente.");
+            }
+
             System.out.println("\n╔══════════════════════════════════════════════╗");
-            System.out.println("║   NSGA-II - FUH Scheduling (Modo Manual)    ║");
+            System.out.println("║   NSGA-II - FUH Scheduling (Modo Semilla)   ║");
             System.out.println("╚══════════════════════════════════════════════╝");
             System.out.println("▶ Ejecutando algoritmo...");
             
@@ -203,10 +181,8 @@ public class FUHRunner {
             );
             
             List<IntegerSolution> result = resultWrapper.solutions; 
-            // Ordenar por Objetivo 1 para mejor visualización
             result.sort(Comparator.comparingDouble(s -> s.objectives()[0]));
 
-            // Mostrar resultados en consola
             displayResults(result, 0, resultWrapper.executionTimeMs);
             
             // Guardar resultados si hay algo válido
@@ -224,14 +200,15 @@ public class FUHRunner {
     }
 
     // =========================================================
-    // 5. MÉTODOS DE VISUALIZACIÓN Y REPORTE
+    // 5. MÉTODOS DE VISUALIZACIÓN Y REPORTE (Se mantienen igual)
     // =========================================================
 
     private static void displayResults(List<IntegerSolution> solutions, long startTime, long endTime) {
+        long executionTime = endTime - startTime;
         System.out.println("\n══════════════════════════════════════════════");
         System.out.println("RESULTADOS (" + solutions.size() + " soluciones)");
         System.out.println("══════════════════════════════════════════════");
-        System.out.println("⏱️  Tiempo: " + endTime + " ms");
+        System.out.println("⏱️  Tiempo: " + executionTime + " ms");
         
         if (solutions.isEmpty()) {
             System.out.println("⚠️ No se encontraron soluciones.");
@@ -286,7 +263,6 @@ public class FUHRunner {
             rows.add(new FixtureRow(m, s));
         }
         
-        // Ordenar por Cancha y Hora
         rows.sort(Comparator.comparing((FixtureRow r) -> r.slot.getCourtId())
                   .thenComparingInt(r -> r.slot.getTimeSlotId()));
 
@@ -304,7 +280,6 @@ public class FUHRunner {
                                                  ExcelLoader.DataResult data) {
         Slot[] assignments = decodeSolution(solution, data.validSlots);
         
-        // Verificar superposiciones
         Map<String, List<Integer>> ocupacion = new HashMap<>();
         int superposiciones = 0;
         for (int i = 0; i < assignments.length; i++) {
