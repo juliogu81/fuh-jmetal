@@ -137,18 +137,34 @@ public class FUHRunner {
         // --- CONFIGURACIÓN PARA BUSCAR PARETO ---
         int populationSize = 100;
         double crossoverProb = 0.95; 
-        double mutationProb = 0.1; // Alto para forzar exploración
+        double mutationProb = 0.05;
         int maxEvaluations = 200000;
         long testSeed = 12345L; 
         
         try {
             // 🔥 AJUSTA ESTAS RUTAS 🔥
             String excelPath = "/Users/juliogu/Documentos/git/ae-fixture/data/entrada/06_8-9_ae.xlsx";
-            String seedPath = "/Users/juliogu/Documentos/git/ae-fixture/data/salida/output_2025-12-14_21-56.xlsx";
+            String seedPath = "/Users/juliogu/Documentos/git/ae-fixture/data/salida/output_2025-12-14_23-49.xlsx";
 
             // 1. Cargar datos
             ExcelLoader.DataResult data = loadDataFromExcel(excelPath);
             
+         // 🔥 INICIO DE LA SECCIÓN DE DIAGNÓSTICO DE CAPACIDAD (Lo que quieres agregar)
+            Set<String> uniquePhysicalSlots = new HashSet<>();
+            // Recorremos la configuración de canchas para obtener la capacidad real (todos los slots)
+            for (CourtConfig court : data.courtConfigs.values()) {
+                for (int h = court.getStartHour(); h < court.getEndHour(); h++) {
+                     String uniqueKey = court.getId() + "_" + h;
+                     uniquePhysicalSlots.add(uniqueKey);
+                }
+            }
+            int totalPhysicalCapacity = uniquePhysicalSlots.size();
+            
+            System.out.println("📊 Datos cargados:");
+            System.out.println("   • Partidos: " + data.matchInfos.size());
+            System.out.println("   • Canchas: " + data.courtConfigs.size());
+            System.out.println("   • Capacidad Real (Slots): " + totalPhysicalCapacity);
+            // 🔥 FIN DE LA SECCIÓN DE DIAGNÓSTICO DE CAPACIDAD
             // 2. Definir Problema
             FUHSchedulingProblem problem = new FUHSchedulingProblem(
                 data.validSlots, data.matchInfos, data.courtConfigs, data.priorities, data.categoryBlocks
